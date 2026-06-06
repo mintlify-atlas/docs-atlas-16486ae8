@@ -1,0 +1,110 @@
+---
+title: "Installing Accompanist Lyrics UI in Your Project"
+sidebarTitle: "Installation"
+description: "Add Accompanist Lyrics UI to your Android or Compose Multiplatform project. Covers Gradle setup, version catalog, and minimum SDK requirements."
+---
+
+Accompanist Lyrics UI is published to **Maven Central** and supports Kotlin Multiplatform targeting **Android** (minSdk 29) and **JVM**. All rendering code lives in the `commonMain` source set, so there is nothing platform-specific to configure beyond the standard Kotlin Multiplatform plugin setup.
+
+## Requirements
+
+Before adding the dependency, confirm your project meets the following minimum requirements:
+
+| Requirement | Minimum Version |
+|---|---|
+| Kotlin | 2.x |
+| Compose Multiplatform | 1.x |
+| Android `minSdk` | 29 (API 29, Android 10) |
+| JVM target | 21 |
+
+<Warning>
+  The Android target requires **minSdk 29** because the blur effect applied to inactive lines relies on `RenderEffect` APIs introduced in Android 12 (API 31) with a graceful fallback path that still requires API 29 baseline rendering behaviour. Setting `minSdk` below 29 will cause a build-time manifest merge failure.
+</Warning>
+
+## Adding Dependencies
+
+Add both `lyrics-ui` and `lyrics-core` to your module's `build.gradle.kts`. The `lyrics-ui` artifact ships the composable renderer; `lyrics-core` provides the lyrics parser and the `SyncedLyrics` data model that the renderer consumes.
+
+```kotlin
+// build.gradle.kts (module)
+dependencies {
+    implementation("com.mocharealm.accompanist:lyrics-ui:1.0.18")
+    implementation("com.mocharealm.accompanist:lyrics-core:0.4.4")
+}
+```
+
+For a Kotlin Multiplatform module using `sourceSets`, add the dependencies inside `commonMain`:
+
+```kotlin
+// build.gradle.kts (KMP module)
+kotlin {
+    sourceSets {
+        commonMain {
+            dependencies {
+                implementation("com.mocharealm.accompanist:lyrics-ui:1.0.18")
+                implementation("com.mocharealm.accompanist:lyrics-core:0.4.4")
+            }
+        }
+    }
+}
+```
+
+## Version Catalog
+
+If your project uses a Gradle version catalog (`gradle/libs.versions.toml`), declare the libraries there and reference them by alias in your build script.
+
+**`gradle/libs.versions.toml`**
+
+```toml
+[libraries]
+accompanist-lyrics-ui = { module = "com.mocharealm.accompanist:lyrics-ui", version = "1.0.18" }
+accompanist-lyrics-core = { module = "com.mocharealm.accompanist:lyrics-core", version = "0.4.4" }
+```
+
+**`build.gradle.kts`**
+
+```kotlin
+dependencies {
+    implementation(libs.accompanist.lyrics.ui)
+    implementation(libs.accompanist.lyrics.core)
+}
+```
+
+You can also declare a shared version entry to keep both artifacts in sync:
+
+```toml
+[versions]
+accompanist = "1.0.18"
+accompanist-core = "0.4.4"
+
+[libraries]
+accompanist-lyrics-ui = { module = "com.mocharealm.accompanist:lyrics-ui", version.ref = "accompanist" }
+accompanist-lyrics-core = { module = "com.mocharealm.accompanist:lyrics-core", version.ref = "accompanist-core" }
+```
+
+## Verifying the Installation
+
+After syncing Gradle, confirm the library is on the classpath by importing the main composable in any Kotlin file:
+
+```kotlin
+import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
+```
+
+If the IDE resolves the import without errors, the dependency is configured correctly. You can also write a minimal preview composable to confirm rendering works at design time:
+
+```kotlin
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.tooling.preview.Preview
+import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
+
+@Preview
+@Composable
+fun LyricsPreview() {
+    // KaraokeLyricsView requires a SyncedLyrics object —
+    // a successful import here confirms the dependency is resolved.
+}
+```
+
+<Note>
+  Always check [Maven Central](https://central.sonatype.com/artifact/com.mocharealm.accompanist/lyrics-ui) for the latest published version of `lyrics-ui` before pinning a version in your project. The version numbers shown in this page reflect the latest stable release at the time of writing.
+</Note>

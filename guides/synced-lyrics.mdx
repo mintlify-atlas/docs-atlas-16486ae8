@@ -1,0 +1,139 @@
+---
+title: "Rendering Synced (Non-Karaoke) Lyrics"
+sidebarTitle: "Synced Lyrics"
+description: "Use KaraokeLyricsView with SyncedLine data to display line-synced lyrics from LRC files without syllable-level animation."
+---
+
+`SyncedLine` is the simpler sibling of `KaraokeLine`. It holds a complete line of text with a start and end timestamp, but contains no syllable breakdown and therefore no character-level animation. It is the natural choice when only LRC-style timing data is available, when syllable data has not yet been generated, or as a lightweight rendering path for languages where syllable-level karaoke is not meaningful. `KaraokeLyricsView` handles `SyncedLine` entries transparently — no extra configuration is required.
+
+## When to Use SyncedLine
+
+`SyncedLine` is the right data type whenever you have line-level timing but not word- or syllable-level timing. Common scenarios include:
+
+- **LRC files** — the standard `.lrc` format marks timestamps at the start of each line, not per word.
+- **Lyrics without word-level data** — streaming services often provide line-synced metadata only.
+- **Fallback rendering** — if syllable-level timing is unavailable for a language or track, you can populate the lyrics list with `SyncedLine` objects and the view will degrade gracefully.
+- **Background vocals or ad-lib text** — short annotations that do not warrant full karaoke treatment.
+
+## How It Renders
+
+`KaraokeLyricsView` inspects each item in `SyncedLyrics.lines` at render time. When it encounters a `SyncedLine`, it routes it to `SyncedLineText` instead of `KaraokeLineText`. No configuration switch is needed — the routing is based on the runtime type of the line object.
+
+```kotlin
+// Inside KaraokeLyricsView — simplified
+when (line) {
+    is KaraokeLine -> {
+        // routed to KaraokeLineText with per-syllable canvas rendering
+    }
+    is SyncedLine -> {
+        SyncedLineText(
+            line = line,
+            isLineRtl = isLineRtl,
+            textStyle = stableNormalTextStyle.copy(lineHeight = 1.2.em),
+            textColor = textColor,
+            showTranslation = showTranslation
+        )
+    }
+}
+```
+
+`SyncedLineText` renders through the standard Compose `Text` composable rather than a custom `Canvas`, which means it benefits from normal text layout features (line wrapping, accessibility, copy/paste) without any custom drawing overhead.
+
+The full `SyncedLineText` signature is:
+
+```kotlin
+@Composable
+fun SyncedLineText(
+    line: SyncedLine,
+    isLineRtl: Boolean,
+    textStyle: TextStyle,
+    textColor: Color,
+    modifier: Modifier = Modifier,
+    showTranslation: Boolean = true
+)
+```
+
+| Parameter | Description |
+|---|---|
+| `line` | The `SyncedLine` data containing `content`, optional `translation`, `start`, and `end` |
+| `isLineRtl` | Whether the text should be end-aligned and right-to-left |
+| `textStyle` | The `TextStyle` to apply to the line text (inherited from `normalLineTextStyle`) |
+| `textColor` | The base text color (inherited from `KaraokeLyricsView.textColor`) |
+| `showTranslation` | Whether to render `line.translation` below the main text |
+
+## RTL Detection
+
+`SyncedLineText` relies on an externally computed `isLineRtl` flag — the caller (always `KaraokeLyricsView`) detects RTL by calling `isRtl()` on `line.content`. The `isRtl()` extension function checks whether any character in the string is an Arabic code point:
+
+```kotlin
+fun String.isRtl(): Boolean {
+    return any { it.isArabic() }
+}
+```
+
+When `isLineRtl` is `true`, `SyncedLineText` switches to `Alignment.End` for the column and `TextAlign.End` for the text:
+
+```kotlin
+Column(
+    modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 16.dp),
+    horizontalAlignment = if (isLineRtl) Alignment.End else Alignment.Start
+) {
+    Text(
+        text = line.content,
+        style = textStyle,
+        color = textColor,
+        textAlign = if (isLineRtl) TextAlign.End else TextAlign.Start
+    )
+    // ...
+}
+```
+
+This produces correct right-to-left visual layout without requiring a `CompositionLocalProvider` for `LocalLayoutDirection`.
+
+<Note>
+The current RTL detection only checks for Arabic characters. If you need RTL support for other scripts (Hebrew, Thaana, etc.), you can extend `isRtl()` in your own utilities and pre-compute the `isLineRtl` flag before passing lines into the view. The `SyncedLineText` signature accepts the flag directly.
+</Note>
+
+## Mixing Karaoke and Synced Lines
+
+A `SyncedLyrics` object's `lines` list is typed as `List<ISyncedLine>`, which is the common interface implemented by both `KaraokeLine` and `SyncedLine`. This means a single lyrics object can contain a mix of both types:
+
+```kotlin
+val lyrics = SyncedLyrics(
+    lines = listOf(
+        // Line-synced intro verse from an LRC file
+        SyncedLine(
+            content = "In the beginning there was silence",
+            start = 1000,
+            end = 4500
+        ),
+        // Fully timed karaoke chorus
+        KaraokeLine.MainKaraokeLine(
+            syllables = listOf(/* ... */),
+            start = 4500,
+            end = 9000
+        ),
+        // Another synced line for a bridge
+        SyncedLine(
+            content = "Then the music started",
+            start = 9000,
+            end = 12000,
+            translation = "Music began"
+        )
+    )
+)
+
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = lyrics,
+    currentPosition = currentPositionProvider,
+    onLineClicked = { onSeekTo(it.start) },
+    onLinePressed = { /* ... */ }
+)
+```
+
+`KaraokeLyricsView` processes both types in the same `LazyColumn` and applies focus highlighting, blur, and auto-scroll identically to both — the only difference is which render path each line uses internally.
+
+<Tip>
+If you are parsing LRC files that have word-timing extensions (Enhanced LRC / A2 extension format), you can map those to `KaraokeLine` objects for the karaoke rendering path and fall back to `SyncedLine` for plain LRC lines in the same pass.
+</Tip>

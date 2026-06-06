@@ -1,0 +1,96 @@
+---
+title: "Accompanist Sample App Overview"
+sidebarTitle: "Overview"
+description: "Explore the Accompanist sample app — a full-featured music player demonstrating karaoke lyrics, flowing light backgrounds, share sheets, and adaptive layouts."
+---
+
+The Accompanist sample app is a complete music player that showcases every major capability of the `lyrics-ui` library. It pairs a `KaraokeLyricsView` with real-time ExoPlayer playback, an animated album-art background, a social sharing flow, and a fully adaptive layout that works on phones, tablets, and the desktop JVM target — giving you a battle-tested reference for your own integration.
+
+## What's Included
+
+<CardGroup cols={2}>
+  <Card title="Player Screen" icon="play">
+    Full-screen lyrics view with album art thumbnail, song/artist metadata, playback seek-on-tap, and per-syllable karaoke animation powered by `KaraokeLyricsView`.
+  </Card>
+  <Card title="FlowingLightBackground" icon="wand-magic-sparkles">
+    A dynamic animated background that samples the album-art bitmap, applies saturation and darkening filters based on the art's luminance, and blurs multiple copies at different scales to create a cinematic depth effect.
+  </Card>
+  <Card title="ShareScreen" icon="share-nodes">
+    Capture one or more lyric lines as a shareable image card. Two card styles are available: an Apple-music-inspired card and a Spotify-inspired dark card. Users can save to the gallery or invoke the system share sheet.
+  </Card>
+  <Card title="Adaptive Layout" icon="tablet-screen-button">
+    Automatically switches between a phone layout (full-screen lyrics with compact header) and a tablet/desktop layout (album art on the left, lyrics on the right in a `Row`) using `LocalWindowLayoutType`.
+  </Card>
+</CardGroup>
+
+### Song Selection Dialog
+
+A `MusicItemSelectionDialog` lets users choose from the bundled sample tracks or load a completely custom audio + lyrics file (and optional translation) from device storage. Custom files are picked via Android's `ActivityResultContracts.GetContent` and parsed at runtime by `AutoParser`.
+
+---
+
+## Sample Tracks
+
+The following tracks are bundled under `sample/src/androidMain/assets/` and are loaded by `MusicRepositoryImpl` at runtime:
+
+| Track | File(s) | Format & Notes |
+|---|---|---|
+| **Golden Hour** *(Acapella Version)* | `golden-hour.m4a` + `golden-hour.ttml` | TTML (AMLL dialect) — single singer, with accompaniment lines and independent punctuation tokens |
+| **好久没下雨了** *(Haven't Rained for So Long)* | `havent-rain-for-so-long.mp3` + `havent-rain-for-so-long.ttml` | TTML — single singer, CJK text with breathing-dot markers |
+| **La Pelirroja** | `la-pelirroja.mp3` + `la-pelirroja.ttml` | TTML v1 — single singer |
+| **ME!** | `me.mp3` + `me.lys` + `me-translation.lrc` | LYS (Lyricify Syllable) native format — duo singer with accompaniment; translation injected from a separate LRC file |
+
+<Note>
+  Track metadata (label, format description, media URI, lyrics asset path, and optional translation asset path) is declared in `MusicRepositoryImpl.getMusicItems()`. The `AutoParser` automatically detects the lyrics format (TTML, LYS, LRC, etc.) so no format-specific parsing code is needed at the call site.
+</Note>
+
+---
+
+## Running the Sample
+
+<Steps>
+  <Step title="Download the demo APK">
+    Grab the latest pre-built APK directly from GitHub Releases — no build tooling required:
+
+    [**Download Demo APK →**](https://github.com/6xingyv/Accompanist/releases/latest)
+
+    Install it on any Android device running API 29 (Android 10) or higher.
+  </Step>
+  <Step title="Build from source">
+    Clone the repository and open the project in Android Studio. Select the **`sample`** run configuration, choose an Android device or emulator, and press **Run**.
+
+    ```bash
+    git clone https://github.com/6xingyv/Accompanist.git
+    cd Accompanist
+    # Open in Android Studio, or run from CLI:
+    ./gradlew :sample:installDebug
+    ```
+  </Step>
+  <Step title="Run the desktop JVM target">
+    The sample also ships a desktop entry point (`MainKt`). Run it with:
+
+    ```bash
+    ./gradlew :sample:run
+    ```
+
+    Audio playback on desktop uses the same Media3 abstraction; lyrics rendering is identical to Android.
+  </Step>
+</Steps>
+
+---
+
+## Architecture
+
+The sample follows a clean, unidirectional-data-flow architecture:
+
+| Layer | Class / Component | Responsibility |
+|---|---|---|
+| **ViewModel** | `PlayerViewModel` | Holds `PlayerUiState` as a `StateFlow`; bridges Media3 `MediaController` events to UI state; owns position-update and luminance-calculation coroutines |
+| **Repository** | `MusicRepository` / `MusicRepositoryImpl` | Loads `MusicItem` metadata and parses lyrics files via `AutoParser` |
+| **DI** | Koin `dataModule` + `uiModule` | Wires `MusicRepository`, `PlayerViewModel`, and `ShareViewModel` as Koin-managed singletons/ViewModels |
+| **Audio** | Media3 `ExoPlayer` + `PlaybackService` | Background playback as a `MediaSessionService`; `MediaController` connects the ViewModel to the service |
+| **UI** | `PlayerScreen`, `ShareScreen` | Stateless Composables driven by `uiState`; communicate back via ViewModel methods |
+
+<Note>
+  The sample uses **Koin** for dependency injection — `PlayerViewModel` and `ShareViewModel` are declared in `uiModule` and injected into Composables via `koinViewModel()`. Audio playback is handled by **Media3 ExoPlayer** running in a bound `PlaybackService`, keeping audio alive when the app is backgrounded.
+</Note>

@@ -1,0 +1,305 @@
+---
+title: "Player Screen Implementation Guide"
+sidebarTitle: "Player Screen"
+description: "Deep-dive into the sample app's PlayerScreen: the frame-loop position provider, adaptive layouts, glow blend mode setup, and lyric share sheet integration."
+---
+
+`PlayerScreen.kt` is the heart of the sample app and demonstrates several patterns that are strongly recommended for production use of `KaraokeLyricsView`. Reading through it end-to-end will show you how to wire up a frame-accurate position provider, configure the glow blend mode correctly, handle adaptive layouts, integrate the flowing-light background, and hook the share sheet into the lyric long-press callback — all without triggering unnecessary recompositions.
+
+---
+
+## The Frame-Loop Position Provider
+
+This is the single most important pattern in the entire sample. Getting it right is what separates a silky-smooth karaoke animation from a janky, stuttering one.
+
+### Why a custom position provider?
+
+`KaraokeLyricsView` accepts a `currentPosition: () -> Int` lambda rather than a plain `Int` parameter. This is deliberate: if the position were a normal `@Composable` parameter, every millisecond change in playback time would trigger a full recomposition of `PlayerScreen` — cascading through every child composable and thrashing the composition system.
+
+Instead, the lambda is read only inside the `Canvas` within `KaraokeLyricsView`. Updating a `MutableLongState` value causes **only the Canvas to redraw**, leaving `PlayerScreen` and all its sibling composables completely untouched.
+
+### How it works
+
+```kotlin
+@Composable
+fun PlayerScreen(
+    playerViewModel: PlayerViewModel = koinViewModel(),
+    shareViewModel: ShareViewModel = koinViewModel(),
+) {
+    val listState = rememberLazyListState()
+    val animatedPositionState = remember { mutableLongStateOf(0L) }
+
+    // A stable lambda captured once — only reads the State when KaraokeLyricsView calls it
+    val currentPositionProvider = remember {
+        {
+            animatedPositionState.longValue.toInt()
+        }
+    }
+
+    val uiStateState = playerViewModel.uiState.collectAsState()
+    val isPlaying by remember { derivedStateOf { uiStateState.value.playbackState.isPlaying } }
+
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                val playbackState = uiStateState.value.playbackState
+                val elapsed = System.currentTimeMillis() - playbackState.lastUpdateTime
+                val newPosition = (playbackState.position + elapsed).coerceAtMost(
+                    playbackState.duration
+                )
+
+                val currentAnimPos = animatedPositionState.longValue
+
+                if (currentAnimPos <= newPosition || abs(newPosition - currentAnimPos) >= 100) {
+                    // Writing to MutableLongState does NOT recompose PlayerScreen —
+                    // it only invalidates the DrawScope inside KaraokeLyricsView's Canvas
+                    animatedPositionState.longValue = newPosition
+                }
+                awaitFrame()   // suspend until the next Choreographer frame
+            }
+        } else {
+            animatedPositionState.longValue = uiStateState.value.playbackState.position
+        }
+    }
+    // ...
+}
+```
+
+### Step-by-step breakdown
+
+<Steps>
+  <Step title="Create a MutableLongState">
+    `val animatedPositionState = remember { mutableLongStateOf(0L) }` allocates a single `Long`-backed Compose state object. It survives recompositions because it is wrapped in `remember`.
+  </Step>
+  <Step title="Wrap it in a stable lambda">
+    `val currentPositionProvider = remember { { animatedPositionState.longValue.toInt() } }` creates a lambda that is allocated **once**. Because it is wrapped in `remember` it will never change identity across recompositions, keeping `KaraokeLyricsView`'s parameter stable.
+  </Step>
+  <Step title="Run the frame loop">
+    `LaunchedEffect(isPlaying)` launches a coroutine that lives exactly as long as `isPlaying` remains `true`. Inside the loop, `awaitFrame()` suspends the coroutine until the next VSYNC signal from Android's `Choreographer`, ensuring the position is updated at display refresh rate (typically 60 or 120 Hz).
+  </Step>
+  <Step title="Interpolate position between ViewModel snapshots">
+    `PlayerViewModel` snapshots `MediaController.currentPosition` every 250 ms. The frame loop bridges those discrete snapshots by computing `position + (currentTime - lastUpdateTime)`, producing a smooth monotonically-increasing time value on every frame. The `abs(newPosition - currentAnimPos) >= 100` guard allows backward jumps (seek operations) to pass through immediately.
+  </Step>
+  <Step title="Pass the lambda to KaraokeLyricsView">
+    `currentPosition = currentPositionProvider` in `PlayerLyrics` (see next section). Only the `Canvas` inside `KaraokeLyricsView` reads this lambda, so only the Canvas is invalidated on each frame — `PlayerScreen` itself never recomposes due to position changes.
+  </Step>
+</Steps>
+
+<Tip>
+  Study this frame-loop position provider pattern carefully — it is the key to high-performance lyrics rendering without excessive recomposition. The same approach applies whether you use `KaraokeLyricsView` directly or build a custom lyrics renderer on top of the `lyrics-core` data model.
+</Tip>
+
+---
+
+## Glow Effect Setup
+
+The sample renders lyrics with a luminous glow on top of the `FlowingLightBackground`. Achieving this correctly requires two specific settings working together.
+
+```kotlin
+@Composable
+fun PlayerLyrics(
+    listState: LazyListState,
+    lyrics: SyncedLyrics?,
+    currentPosition: () -> Int,
+    showTranslation: Boolean,
+    showPhonetic: Boolean,
+    onSeekTo: (Int) -> Unit,
+    onShare: (KaraokeLine) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    if (lyrics == null) return
+
+    val currentTextStyle = LocalTextStyle.current
+    val sf = SFPro()
+    val normalStyle = remember(currentTextStyle) {
+        currentTextStyle.copy(
+            fontSize = 34.sp,
+            fontFamily = sf,
+            fontWeight = FontWeight.Bold,
+            textMotion = TextMotion.Animated,
+        )
+    }
+
+    val accompanimentStyle = remember(currentTextStyle) {
+        currentTextStyle.copy(
+            fontSize = 20.sp,
+            fontFamily = sf,
+            fontWeight = FontWeight.Bold,
+            textMotion = TextMotion.Animated,
+        )
+    }
+
+    KaraokeLyricsView(
+        listState = listState,
+        lyrics = lyrics,
+        currentPosition = currentPosition,
+        onLineClicked = { line -> onSeekTo(line.start) },
+        onLinePressed = { line -> onShare(line as KaraokeLine) },
+        showTranslation = showTranslation,
+        showPhonetic = showPhonetic,
+        normalLineTextStyle = normalStyle,
+        accompanimentLineTextStyle = accompanimentStyle,
+        modifier = modifier.graphicsLayer {
+            blendMode = BlendMode.Plus          // additive blending = glow effect
+            compositingStrategy = CompositingStrategy.Offscreen  // required for correct blend
+        },
+        useBlurEffect = false
+    )
+}
+```
+
+### Key settings explained
+
+| Setting | Value | Why |
+|---|---|---|
+| `blendMode` | `BlendMode.Plus` | Additive blending: white text on a dark background glows; overlapping layers brighten naturally — the same technique Apple Music uses |
+| `compositingStrategy` | `CompositingStrategy.Offscreen` | Forces the composable and all its children to be rendered into an offscreen buffer first, then composited onto the parent with the specified blend mode. Without this, `BlendMode.Plus` produces incorrect results because it would blend against whatever happens to be in the parent layer |
+| `useBlurEffect` | `false` | The sample disables `KaraokeLyricsView`'s built-in blur halo because the `BlendMode.Plus` glow is already visually dramatic on top of the blurred `FlowingLightBackground`. Enable it if you want a softer double-glow look |
+
+<Warning>
+  Always pair `BlendMode.Plus` (or any non-default blend mode) with `CompositingStrategy.Offscreen`. Omitting `CompositingStrategy.Offscreen` causes the blend to operate against the wrong source pixels, producing washed-out or invisible text. This is a common gotcha in Compose graphics layers.
+</Warning>
+
+---
+
+## Adaptive Layout
+
+`PlayerScreen` reads `LocalWindowLayoutType.current` to decide which layout to render. There is no manual breakpoint arithmetic — the `LocalWindowLayoutType` composition local is provided by the app's adaptive layout helper and automatically reflects the current window class.
+
+### Phone layout — `MobilePlayerScreen`
+
+On a phone in portrait orientation (`WindowLayoutType.Phone`), the screen shows a compact header row containing the album-art thumbnail, scrolling title/artist marquee text, and the controls cluster. Below the header, `PlayerLyrics` fills the remaining vertical space with the full-screen karaoke view.
+
+```kotlin
+WindowLayoutType.Phone -> {
+    MobilePlayerScreen(
+        listState = listState,
+        animatedPosition = currentPositionProvider,
+        playerViewModel = playerViewModel,
+        shareViewModel = shareViewModel,
+        backgroundState = backgroundState,
+        currentMusicItem = currentMusicItem,
+        showTranslation = showTranslation,
+        showPhonetic = showPhonetic,
+        lyrics = lyrics
+    )
+}
+```
+
+The `MobilePlayerScreen` composable renders:
+- A `Row` header with a 60 dp album-art thumbnail clipped to a `ContinuousRoundedRectangle(6.dp)`, `PlayerMetadata` (title + artist in `BlendMode.Plus`), and `PlayerControls` (translation toggle, phonetic toggle, song-selection button)
+- `PlayerLyrics` with `Modifier.padding(horizontal = 6.dp)` below it
+
+### Tablet / Desktop layout — `PadPlayerScreen`
+
+On larger windows (`WindowLayoutType.Pad` / desktop), a `Row` places a 40 % wide `Column` on the left containing the full album-art image (aspect ratio 1:1) and the metadata/controls below it. The lyrics occupy the remaining horizontal space on the right, wrapped in `AnimatedVisibility` so they fade in once lyrics have loaded.
+
+```kotlin
+else -> {
+    PadPlayerScreen(
+        listState = listState,
+        animatedPosition = currentPositionProvider,
+        playerViewModel = playerViewModel,
+        shareViewModel = shareViewModel,
+        backgroundState = backgroundState,
+        currentMusicItem = currentMusicItem,
+        showTranslation = showTranslation,
+        showPhonetic = showPhonetic,
+        lyrics = lyrics
+    )
+}
+```
+
+<Info>
+  Both layouts receive the same `currentPositionProvider` lambda. Because the lambda identity is stable (created with `remember` once in `PlayerScreen`), switching between layouts does not create a new lambda or reset the frame loop.
+</Info>
+
+---
+
+## FlowingLightBackground
+
+The `FlowingLightBackground` composable creates a cinematic depth effect by rendering multiple blurred, scaled copies of the album-art bitmap layered on top of each other. It receives a `BackgroundVisualState` which carries:
+
+- `bitmap: ImageBitmap?` — the album art decoded from `MediaController.mediaMetadata.artworkData`
+- `luminance: Float` — the average perceived brightness of the bitmap (0–1), calculated in `PlayerViewModel` on a background coroutine using the ITU-R BT.709 formula (`0.2126·R + 0.7152·G + 0.0722·B`)
+
+```kotlin
+@Stable
+data class BackgroundVisualState(
+    val bitmap: ImageBitmap?,
+    val luminance: Float
+)
+```
+
+When `luminance > 0.5` (a bright album art), `FlowingLightBackground` applies a `ColorMatrix` that desaturates and darkens the image so the white lyric text remains readable. Bitmap transitions use a 600 ms cross-fade via `AnimatedContent`.
+
+In `PlayerScreen`, the background state is derived cheaply without triggering PlayerScreen recomposition:
+
+```kotlin
+val backgroundState by remember { derivedStateOf { uiStateState.value.backgroundState } }
+
+FlowingLightBackground(
+    state = backgroundState,
+    modifier = Modifier.fillMaxSize()
+)
+```
+
+---
+
+## Share Sheet
+
+Long-pressing a lyric line triggers the share flow. `PlayerLyrics` exposes this through the `onLinePressed` callback of `KaraokeLyricsView`:
+
+```kotlin
+onLinePressed = { line -> onShare(line as KaraokeLine) }
+```
+
+The `onShare` lambda in `MobilePlayerScreen` (and `PadPlayerScreen`) does three things in sequence:
+
+```kotlin
+onShare = { line ->
+    lyrics?.let { lyrics ->
+        playerViewModel.onShareRequested()   // pauses playback, shows the modal
+        val context = ShareContext(
+            lyrics = lyrics,
+            initialLine = line,
+            backgroundState = backgroundState,
+            title = currentMusicItem?.label ?: "Unknown Title",
+            artist = currentMusicItem?.testTarget?.split(" [")?.get(0) ?: "Unknown",
+            cover = cover                    // android.graphics.Bitmap for the share card
+        )
+        shareViewModel.prepareForSharing(context)  // seeds ShareViewModel state
+        playerViewModel.onShareRequested()
+    }
+}
+```
+
+`ShareScreen` is shown inside a `ModalScaffold` driven by `uiState.isShareSheetVisible`. It has two steps:
+
+1. **`ShareStep.SELECTING`** — a scrollable list of all lyric lines; the user taps to toggle up to five lines for inclusion in the share card
+2. **`ShareStep.GENERATING`** — a horizontal pager with two card styles (Apple-inspired and Spotify-inspired). Users can toggle translation/phonetic display, save the card to the gallery, or invoke the system share sheet
+
+When the modal is dismissed, `PlayerViewModel.onShareDismissed()` resumes playback and `ShareViewModel.reset()` clears the state.
+
+---
+
+## Song Selection
+
+The `MusicItemSelectionDialog` composable provides a two-level selection UI:
+
+- The **bundled track list** (`LazyColumn`) shows each `MusicItem`'s `label` and `testTarget` description. Tapping a track calls `PlayerViewModel.onSongSelected(item)`, which calls `MediaController.setMediaItem`, `prepare()`, and `play()`, then triggers `loadLyricsFor(item)` to parse the lyrics asset asynchronously.
+- The **"Select Custom File…"** button opens `CustomSongSelectionDialog`, which uses `ActivityResultContracts.GetContent` to let the user pick an audio file, a lyrics file, and an optional translation file from device storage. The content resolver reads the file bytes inline and constructs a `MusicItem` with `isCustom = true`.
+
+```kotlin
+val item = MusicItem(
+    label = audioName,
+    testTarget = "Custom Selection",
+    mediaItem = MediaItem.fromUri(audioUri!!),
+    lyrics = lyricsContent,      // raw text string, not an asset path
+    translation = translationContent,
+    isCustom = true
+)
+onSongSelected(item)
+```
+
+`MusicRepositoryImpl.getLyricsFor` checks `item.isCustom` to decide whether to read from assets or use the embedded string directly, so the same parsing pipeline handles both cases transparently.

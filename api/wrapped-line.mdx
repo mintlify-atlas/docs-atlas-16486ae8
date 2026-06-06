@@ -1,0 +1,156 @@
+---
+title: "WrappedLine and RowRenderData Reference"
+sidebarTitle: "WrappedLine"
+description: "Reference for WrappedLine and RowRenderData — the intermediate and final layout data structures produced by the lyrics layout calculator pipeline."
+---
+
+`WrappedLine` and `RowRenderData` represent the intermediate and final outputs of the [layout calculator pipeline](/api/lyrics-layout-calculator). `WrappedLine` is the output of the line-breaking stage — syllables grouped into rows but not yet positioned on the canvas. `RowRenderData` is the fully resolved output — syllables with pixel coordinates, plus per-row bounding boxes and timing metadata ready for the drawing layer.
+
+## Pipeline position
+
+```
+measureSyllablesAndDetermineAnimation()
+        │  List<SyllableLayout>
+        ▼
+calculateBalancedLines()
+        │  List<WrappedLine>          ← WrappedLine produced here
+        ▼
+calculateStaticLineLayout()
+        │  List<List<SyllableLayout>>
+        ▼
+calculateRowRenderData()
+        │  List<RowRenderData>        ← RowRenderData produced here
+        ▼
+  KaraokeLineText  (drawing)
+```
+
+---
+
+## WrappedLine
+
+`WrappedLine` is a `@Stable` data class that holds the syllables assigned to one display row by the line-breaking algorithm, together with the row's total pixel width.
+
+```kotlin
+@Stable
+data class WrappedLine(
+    val syllables: List<SyllableLayout>,
+    val totalWidth: Float
+)
+```
+
+<ResponseField name="syllables" type="List<SyllableLayout>" required>
+  The ordered list of [`SyllableLayout`](/api/syllable-layout) objects for this row. At this stage each syllable's `position` field is still `Offset.Zero` — real canvas coordinates are assigned by `calculateStaticLineLayout()`.
+</ResponseField>
+
+<ResponseField name="totalWidth" type="Float" required>
+  The sum of `syllable.width` for all syllables in the row, in pixels. Trailing whitespace is stripped from the last syllable before this value is computed, so `totalWidth` represents the rendered text width, not a width padded with invisible spaces.
+
+  This value is used by `calculateStaticLineLayout()` to compute right-alignment offsets (`startX = canvasWidth − totalWidth`) and RTL starting positions (`currentX = startX + totalWidth`).
+</ResponseField>
+
+<Note>
+  `WrappedLine` is an internal pipeline type. You will encounter it if you are calling the layout functions directly, but you do not typically need to construct one yourself.
+</Note>
+
+---
+
+## RowRenderData
+
+`RowRenderData` is a `@Stable` data class that bundles everything the canvas drawing layer needs for one display row: the positioned syllables, the row's pixel extents, the timing window for gradient animation, and padded bounds for `Canvas.saveLayer()`.
+
+```kotlin
+@Stable
+data class RowRenderData(
+    val rowLayouts: List<SyllableLayout>,
+    val totalMinX: Float,
+    val totalMaxX: Float,
+    val totalWidth: Float,
+    val firstSyllableStart: Int,
+    val lastSyllableEnd: Int,
+    val layerBounds: Rect
+)
+```
+
+<ResponseField name="rowLayouts" type="List<SyllableLayout>" required>
+  The fully positioned [`SyllableLayout`](/api/syllable-layout) objects for this row. Every item has a real `position`, `wordPivot`, `wordAnimInfo`, and `charOffsetInWord` value at this stage.
+</ResponseField>
+
+<ResponseField name="totalMinX" type="Float" required>
+  The leftmost `position.x` value among all syllables in this row. For left-aligned lines this is typically `0f`; for right-aligned lines it is `canvasWidth − totalWidth`.
+</ResponseField>
+
+<ResponseField name="totalMaxX" type="Float" required>
+  The rightmost `position.x + width` value among all syllables in this row. Together with `totalMinX`, this defines the tight horizontal extent of the rendered text.
+</ResponseField>
+
+<ResponseField name="totalWidth" type="Float" required>
+  Convenience value equal to `totalMaxX − totalMinX`. Useful for computing the fraction of the canvas covered by this row.
+</ResponseField>
+
+<ResponseField name="firstSyllableStart" type="Int" required>
+  The `syllable.start` timestamp (in milliseconds) of the first syllable in the row. Used by the gradient animation to determine when the highlight sweep should begin for this row.
+</ResponseField>
+
+<ResponseField name="lastSyllableEnd" type="Int" required>
+  The `syllable.end` timestamp (in milliseconds) of the last syllable in the row. Used together with `firstSyllableStart` to normalise the animation playhead into a `[0, 1]` progress value for the row's horizontal gradient.
+</ResponseField>
+
+<ResponseField name="layerBounds" type="Rect" required>
+  A padded `Rect` used as the bounds argument for `Canvas.saveLayer()`. The padding ensures that glow, blur, and shadow effects at the edges of the row are not clipped.
+
+  The bounds are computed as:
+
+  ```
+  left   = totalMinX − (totalWidth  × 0.2) × density
+  right  = totalMaxX + (totalWidth  × 0.2) × density
+  top    = minY      − (rowHeight   × 0.1) × density − maxPhoneticHeight − edgePaddingPx
+  bottom = minY      + rowHeight    + (rowHeight × 0.1) × density + edgePaddingPx
+  ```
+
+  The `edgePaddingDp` parameter of `calculateRowRenderData()` (default `8f`) controls the additional top/bottom inset in density-independent pixels.
+</ResponseField>
+
+---
+
+## Usage example
+
+The following snippet shows how `WrappedLine` and `RowRenderData` fit into a typical measurement pass inside a `LaunchedEffect`:
+
+```kotlin
+// 1. Measure syllables
+val syllableLayouts = measureSyllablesAndDetermineAnimation(
+    syllables = line.syllables,
+    textMeasurer = textMeasurer,
+    style = lyricsStyle,
+    phoneticStyle = phoneticStyle,
+    isAccompanimentLine = line.isAccompaniment,
+    spaceWidth = spaceWidth
+)
+
+// 2. Wrap into rows  →  List<WrappedLine>
+val wrappedLines = calculateBalancedLines(
+    syllableLayouts = syllableLayouts,
+    availableWidthPx = canvasWidthPx,
+    textMeasurer = textMeasurer,
+    style = lyricsStyle
+)
+
+// 3. Assign positions  →  List<List<SyllableLayout>>
+val lineLayouts = calculateStaticLineLayout(
+    wrappedLines = wrappedLines,
+    isLineRightAligned = isRightAligned,
+    canvasWidth = canvasWidthPx,
+    lineHeight = lineHeightPx,
+    phoneticHeight = phoneticHeightPx,
+    isRtl = isRtl
+)
+
+// 4. Compute render data  →  List<RowRenderData>
+val rowRenderData = calculateRowRenderData(
+    lineLayouts = lineLayouts,
+    showPhonetic = showPhonetic,
+    density = density.density
+)
+
+// rowRenderData is now ready for the drawing layer
+```

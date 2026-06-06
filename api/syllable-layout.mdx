@@ -1,0 +1,131 @@
+---
+title: "SyllableLayout Data Class Reference"
+sidebarTitle: "SyllableLayout"
+description: "Reference for SyllableLayout — the pre-computed layout data for a single karaoke syllable, including position, animation info, phonetics, and character layouts."
+---
+
+`SyllableLayout` holds all pre-computed rendering data for a single `KaraokeSyllable`. It is produced by [`measureSyllablesAndDetermineAnimation()`](/api/lyrics-layout-calculator#measure-syllables-and-determine-animation) and consumed by the canvas drawing functions in `KaraokeLineText`. Each instance is `@Stable`, meaning Compose can skip recomposition when its fields have not changed.
+
+## Data Class Definition
+
+```kotlin
+@Stable
+data class SyllableLayout(
+    val syllable: KaraokeSyllable,
+    val textLayoutResult: TextLayoutResult,
+    val wordId: Int,
+    val useAwesomeAnimation: Boolean,
+    val width: Float = textLayoutResult.size.width.toFloat(),
+    val position: Offset = Offset.Zero,
+    val wordPivot: Offset = Offset.Zero,
+    val wordAnimInfo: WordAnimationInfo? = null,
+    val charOffsetInWord: Int = 0,
+    val charLayouts: List<TextLayoutResult>? = null,
+    val charOriginalBounds: List<Rect>? = null,
+    val firstBaseline: Float = 0f,
+    val phonetic: String? = null,
+    val phoneticLayoutResult: TextLayoutResult? = null,
+)
+```
+
+## Fields
+
+<ResponseField name="syllable" type="KaraokeSyllable" required>
+  The source syllable carrying the raw text content and timing data (`start`, `end`, `content`, `phonetic`). This is the original model object from `accompanist-lyrics-core` — `SyllableLayout` wraps it rather than replacing it.
+</ResponseField>
+
+<ResponseField name="textLayoutResult" type="TextLayoutResult" required>
+  The measured `TextLayoutResult` for the syllable's content string, produced by `TextMeasurer.measure()` with the line's `TextStyle`. Used during canvas drawing to obtain glyph paths and bounding boxes.
+</ResponseField>
+
+<ResponseField name="wordId" type="Int" required>
+  An integer that groups syllables belonging to the same word. Syllables sharing the same `wordId` are always kept together on a single line by the line-wrapping algorithm and share a common `wordPivot` and `wordAnimInfo`.
+</ResponseField>
+
+<ResponseField name="useAwesomeAnimation" type="Boolean" required>
+  When `true`, character-level bounce and swell animations are enabled for this syllable's word. Set to `true` by `measureSyllablesAndDetermineAnimation()` when all of the following conditions are met:
+
+  - Per-character duration > 200 ms
+  - Total word duration ≥ 1 000 ms
+  - Script is not CJK, Arabic, or Devanagari
+  - The line is not an accompaniment (background) line
+
+  When `false`, a simpler scale animation is applied to the whole word instead.
+</ResponseField>
+
+<ResponseField name="width" type="Float">
+  Measured display width of this syllable in pixels. Defaults to `textLayoutResult.size.width.toFloat()`, but may be larger in two situations:
+
+  1. The syllable content ends with a trailing space — the layout pipeline re-measures the trimmed text and adds `spaceWidth × spaceCount` back in.
+  2. The syllable has a phonetic annotation whose rendered width exceeds the main text width.
+
+  Use this value (not `textLayoutResult.size.width`) when computing line widths or hit-testing.
+</ResponseField>
+
+<ResponseField name="position" type="Offset">
+  The computed top-left canvas position for this syllable. Defaults to `Offset.Zero` immediately after `measureSyllablesAndDetermineAnimation()` returns. Populated with real coordinates after `calculateStaticLineLayout()` runs.
+</ResponseField>
+
+<ResponseField name="wordPivot" type="Offset">
+  The center-bottom point of the bounding box that spans all syllables in the same word. Used as the pivot (transform origin) for the word-level scale animation so that characters appear to grow from their baseline. Populated by `calculateStaticLineLayout()`.
+</ResponseField>
+
+<ResponseField name="wordAnimInfo" type="WordAnimationInfo?">
+  Animation timing data for the entire word this syllable belongs to. `null` when `useAwesomeAnimation` is `false` for this word. Populated by `calculateStaticLineLayout()`. See [WordAnimationInfo](#wordanimationinfo) below.
+</ResponseField>
+
+<ResponseField name="charOffsetInWord" type="Int">
+  The index of this syllable's first character within the concatenated word string. For example, if the word is `"hello"` split across two syllables `"hel"` and `"lo"`, then `charOffsetInWord` is `0` and `3` respectively. Used to look up per-character animation progress during drawing.
+</ResponseField>
+
+<ResponseField name="charLayouts" type="List<TextLayoutResult>?">
+  A pre-measured `TextLayoutResult` for every individual character in the syllable's content. Only populated when `useAwesomeAnimation = true`; `null` otherwise. Caching these measurements in the layout phase avoids repeated `TextMeasurer.measure()` calls inside the draw loop.
+</ResponseField>
+
+<ResponseField name="charOriginalBounds" type="List<Rect>?">
+  The bounding `Rect` for each character as reported by `textLayoutResult.getBoundingBox(index)`. These boxes come from the full-syllable layout and are used as reference positions to correctly offset each character's individual canvas transform. Only populated when `useAwesomeAnimation = true`.
+</ResponseField>
+
+<ResponseField name="firstBaseline" type="Float">
+  The baseline distance from the top of the text layout for this syllable, obtained from `textLayoutResult.firstBaseline`. Used by `calculateStaticLineLayout()` to vertically align syllables that may have different font metrics within the same row.
+</ResponseField>
+
+<ResponseField name="phonetic" type="String?">
+  The raw phonetic annotation string for this syllable (e.g., a pinyin syllable like `"nǐ"` or a romaji string). `null` when the source `KaraokeSyllable` carries no phonetic data.
+</ResponseField>
+
+<ResponseField name="phoneticLayoutResult" type="TextLayoutResult?">
+  The measured `TextLayoutResult` for the `phonetic` string, or `null` if there is no phonetic annotation. Measured using `phoneticStyle` in `measureSyllablesAndDetermineAnimation()`.
+</ResponseField>
+
+---
+
+## WordAnimationInfo
+
+`WordAnimationInfo` carries the timing window and content string for a complete word, enabling the drawing layer to derive a single normalized playhead value `[0, 1]` across all characters.
+
+```kotlin
+@Stable
+data class WordAnimationInfo(
+    val wordStartTime: Long,
+    val wordEndTime: Long,
+    val wordContent: String,
+    val wordDuration: Long = wordEndTime - wordStartTime
+)
+```
+
+<ResponseField name="wordStartTime" type="Long" required>
+  Timestamp in milliseconds at which the first syllable of this word begins. Equals the minimum `syllable.start` across all syllables in the word.
+</ResponseField>
+
+<ResponseField name="wordEndTime" type="Long" required>
+  Timestamp in milliseconds at which the last syllable of this word ends. Equals the maximum `syllable.end` across all syllables in the word.
+</ResponseField>
+
+<ResponseField name="wordContent" type="String" required>
+  The full concatenated text content of the word (all syllable `.content` strings joined). Used for script-detection and character-count calculations.
+</ResponseField>
+
+<ResponseField name="wordDuration" type="Long">
+  Convenience property equal to `wordEndTime - wordStartTime`. Pre-computed to avoid repeated subtraction inside the animation loop.
+</ResponseField>

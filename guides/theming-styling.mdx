@@ -1,0 +1,193 @@
+---
+title: "Theming and Styling Accompanist Lyrics UI"
+sidebarTitle: "Theming & Styling"
+description: "Customize text styles, colors, blend modes, blur effects, and breathing dot appearance in Accompanist Lyrics UI to match your app's design."
+---
+
+`KaraokeLyricsView` exposes a rich set of styling parameters that let you match the lyrics panel to your app's visual identity — from font families and text sizes to GPU blend modes, Gaussian blur intensities, and the pulsing interlude dots. All styling parameters have sensible defaults that produce the Apple Music aesthetic out of the box.
+
+## Text Styles
+
+Three `TextStyle` parameters control the typography of the different text layers:
+
+| Parameter | Default | Used for |
+|---|---|---|
+| `normalLineTextStyle` | `34.sp`, `FontWeight.Bold`, `TextMotion.Animated` | Main vocal lines |
+| `accompanimentLineTextStyle` | `20.sp`, `FontWeight.Bold`, `TextMotion.Animated` | Background/harmony accompaniment lines |
+| `phoneticTextStyle` | `13.sp`, `FontWeight.Normal` (derived from `normalLineTextStyle`) | Phonetic ruby text above syllables |
+
+To apply a custom font family across all three layers — as the sample app does with SF Pro — pass matching styles:
+
+```kotlin
+val sf = SFPro() // your FontFamily
+
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = lyrics,
+    currentPosition = currentPositionProvider,
+    onLineClicked = { onSeekTo(it.start) },
+    onLinePressed = { /* ... */ },
+    normalLineTextStyle = TextStyle(
+        fontSize = 34.sp,
+        fontFamily = sf,
+        fontWeight = FontWeight.Bold,
+        textMotion = TextMotion.Animated
+    ),
+    accompanimentLineTextStyle = TextStyle(
+        fontSize = 20.sp,
+        fontFamily = sf,
+        fontWeight = FontWeight.Bold,
+        textMotion = TextMotion.Animated
+    ),
+    phoneticTextStyle = TextStyle(
+        fontSize = 13.sp,
+        fontFamily = sf,
+        fontWeight = FontWeight.Normal
+    )
+)
+```
+
+<Note>
+Always include `textMotion = TextMotion.Animated` in `normalLineTextStyle` and `accompanimentLineTextStyle`. Without it, Compose may optimize away the per-frame text layout invalidations that drive the karaoke fill gradient animation.
+</Note>
+
+## Text Color
+
+The `textColor` parameter sets the base color for **active** (currently singing) text. Inactive text is rendered at a reduced alpha derived from the same color.
+
+```kotlin
+KaraokeLyricsView(
+    // ...
+    textColor = Color.White  // default
+)
+```
+
+Alpha levels used internally:
+
+| Context | Alpha |
+|---|---|
+| Active line text (main) | `1.0f` (`activeAlpha` in `LyricsLineItem`) |
+| Inactive line text | `0.4f` (`inactiveAlpha` in `LyricsLineItem`) |
+| Translation text (karaoke line) | `0.4f` |
+| Translation text (synced line) | `0.6f` |
+| Phonetic text (canvas draw) | `0.4f` |
+| Line-level phonetic (`KaraokeLine.phonetic`) | `0.6f` |
+
+## Blend Modes
+
+The `blendMode` parameter controls how each lyrics line composites against its background layer. The default `BlendMode.Plus` adds the text color to the underlying pixels, which creates a glowing, luminous effect when the background is dark.
+
+```kotlin
+KaraokeLyricsView(
+    // ...
+    blendMode = BlendMode.Plus  // default — additive blending, creates a glow on dark backgrounds
+)
+```
+
+`BlendMode.Plus` requires the parent composable to use `CompositingStrategy.Offscreen` so that the text is first rendered into an isolated layer before being composited. Without this, the additive blend applies against the wrong background and produces incorrect results. Apply it to the modifier of the composable wrapping `KaraokeLyricsView`:
+
+```kotlin
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = lyrics,
+    currentPosition = currentPositionProvider,
+    onLineClicked = { onSeekTo(it.start) },
+    onLinePressed = { /* ... */ },
+    blendMode = BlendMode.Plus,
+    modifier = Modifier.graphicsLayer {
+        blendMode = BlendMode.Plus
+        compositingStrategy = CompositingStrategy.Offscreen
+    }
+)
+```
+
+For a standard, non-glowing appearance — useful on light backgrounds or when the parent already manages compositing — use `BlendMode.SrcOver`:
+
+```kotlin
+KaraokeLyricsView(
+    // ...
+    blendMode = BlendMode.SrcOver,
+    textColor = Color.Black
+)
+```
+
+## Blur Effect
+
+The blur effect dims non-active lines by applying a Gaussian blur proportional to how far each line is from the currently focused line. This draws the eye toward the active line and is the defining visual detail of the Apple Music lyrics style.
+
+```kotlin
+KaraokeLyricsView(
+    // ...
+    useBlurEffect = true,   // default: true
+    blurDelta = 3f          // default: blur radius = distance_in_lines × blurDelta
+)
+```
+
+`blurDelta` controls how quickly blur grows with distance. A line 2 positions away from the focused line receives `2 × blurDelta` pixels of blur radius. The blur is animated with a 300 ms `tween` for smooth transitions.
+
+Blur is automatically suppressed whenever the user is manually scrolling the list — a drag gesture sets `isManualScrolling = true`, which immediately zeros the blur target value and lets the list render crisply during interaction.
+
+Disable the effect entirely on devices where GPU-accelerated `BlurEffect` is too expensive:
+
+```kotlin
+KaraokeLyricsView(
+    // ...
+    useBlurEffect = false
+)
+```
+
+## Breathing Dots
+
+During instrumental interludes and song introductions longer than 5 seconds, `KaraokeLyricsView` shows pulsing breathing dots. Their appearance is fully customizable through `KaraokeBreathingDotsDefaults`:
+
+```kotlin
+data class KaraokeBreathingDotsDefaults(
+    val number: Int = 3,               // number of dots
+    val size: Dp = 16.dp,              // diameter of each dot
+    val margin: Dp = 12.dp,            // gap between dots
+    val enterDurationMs: Int = 3000,   // fade-in animation duration
+    val breathingDotsColor: Color = Color.White
+)
+```
+
+Pass a customized instance to `KaraokeLyricsView`:
+
+```kotlin
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = lyrics,
+    currentPosition = currentPositionProvider,
+    onLineClicked = { onSeekTo(it.start) },
+    onLinePressed = { /* ... */ },
+    breathingDotsDefaults = KaraokeBreathingDotsDefaults(
+        number = 3,
+        size = 20.dp,
+        margin = 10.dp,
+        enterDurationMs = 2000,
+        breathingDotsColor = Color(0xFFE8C4FF) // a soft purple tint
+    )
+)
+```
+
+The dots animate through five internal stages — fade-in, breathing (gentle cosine pulse), pre-exit dip-and-rise, still hold, and fade-out — and align themselves to the same `KaraokeAlignment` as the preceding or following line so they feel anchored to the vocal perspective.
+
+## Offset and Padding
+
+Two `Dp` parameters control vertical spacing within the list:
+
+- **`offset: Dp`** (default `32.dp`) — added as `contentPadding` at the top and bottom of the `LazyColumn`, ensuring the first and last lines are never flush against the screen edges.
+- **`keepAliveZone: Dp`** (default `100.dp`) — additional space kept above the focused line during auto-scroll. Increasing this value keeps more context lines visible above the active line.
+
+```kotlin
+KaraokeLyricsView(
+    // ...
+    offset = 48.dp,
+    keepAliveZone = 120.dp
+)
+```
+
+These two values also interact with the vertical fade gradient that masks the top and bottom edges of the list — the top fade covers `20.dp` and the bottom fade covers `100.dp`, so setting `offset` smaller than those values may make the first or last line partially masked.
+
+<Tip>
+For the best visual result, match `textColor` and `blendMode` to the luminance of your background. On a dark gradient background (luminance < 0.2), use `textColor = Color.White` with `BlendMode.Plus` for the characteristic glow. On a light or white background, switch to `textColor = Color.Black` and `BlendMode.SrcOver` to avoid the additive blend washing out to white.
+</Tip>

@@ -1,0 +1,151 @@
+---
+title: "Custom Easing Functions Reference"
+sidebarTitle: "Easing Functions"
+description: "Reference for the Newton polynomial and cubic bezier easing functions used in Accompanist Lyrics UI character animations: DipAndRise, Swell, Bounce, and EasingOutCubic."
+---
+
+The library defines several custom easing functions that drive the character-level animations produced when `useAwesomeAnimation = true`. These easings are applied frame-by-frame inside `KaraokeLineText`'s canvas draw loop to translate a linear `[0, 1]` playhead position into expressive animation curves for translation, scale, and glow effects.
+
+---
+
+## NewtonPolynomialInterpolationEasing
+
+`NewtonPolynomialInterpolationEasing` is a custom implementation of Compose's `Easing` interface that fits a polynomial through an arbitrary set of `(x, y)` control points using **Newton's divided difference** method and evaluates it efficiently with **Horner's method**.
+
+Unlike `CubicBezierEasing`, which is limited to a single cubic segment, this class lets you define multi-point curves with arbitrary shape — including curves that dip below zero or rise above one.
+
+```kotlin
+class NewtonPolynomialInterpolationEasing(
+    points: List<Pair<Double, Double>>
+) : Easing {
+    constructor(vararg points: Pair<Double, Double>) : this(points.toList())
+
+    override fun transform(fraction: Float): Float
+}
+```
+
+<ParamField path="points" type="List<Pair<Double, Double>>" required>
+  A list of `(x, y)` control points through which the polynomial is interpolated. All `x` values must be unique. The first point should typically be `(0.0, 0.0)` and the last `(1.0, targetValue)` to match the `[0, 1]` fraction range used by Compose animation.
+</ParamField>
+
+### transform
+
+```kotlin
+override fun transform(fraction: Float): Float
+```
+
+Evaluates the Newton polynomial at the given `fraction` using Horner's method. The divided difference coefficients are pre-computed in `init`, so this method is O(n) in the number of control points with no allocations.
+
+<Note>
+  Because the polynomial can pass through any set of points, it may produce values outside `[0, 1]`. This is intentional for animations like `DipAndRise` (negative values move a character downward) and `Swell` (values above 1.0 momentarily enlarge a character beyond its rest size).
+</Note>
+
+### Custom easing example
+
+```kotlin
+val myEasing = NewtonPolynomialInterpolationEasing(
+    0.0 to 0.0,
+    0.3 to 0.8,
+    1.0 to 1.0
+)
+
+// Use with Compose Animatable or animateFloatAsState:
+val progress by animateFloatAsState(
+    targetValue = 1f,
+    animationSpec = tween(durationMillis = 600, easing = myEasing)
+)
+```
+
+---
+
+## Pre-defined easings
+
+### DipAndRise
+
+A character **dips downward** before **rising to its final position**, creating the floating/rising effect you see as each character in a long syllable is sung.
+
+```kotlin
+val DipAndRise: NewtonPolynomialInterpolationEasing  // default: dip=0.5, rise=1.0
+
+fun DipAndRise(
+    dip: Double = 0.5,
+    rise: Double = 1.0
+): NewtonPolynomialInterpolationEasing
+```
+
+Control points: `(0.0, 0.0)` → `(0.5, -dip)` → `(1.0, rise)`
+
+The default `rise = 1.0` means the character ends at its normal position. A higher value keeps the character raised, while a higher `dip` makes the initial downward motion more pronounced.
+
+Applied to: **vertical translation** (Y offset) of each character during its timing window.
+
+---
+
+### Swell
+
+A character briefly **scales above its rest size** at the midpoint of its animation window, then returns to normal — a subtle pulse that gives each character a sense of weight.
+
+```kotlin
+val Swell: NewtonPolynomialInterpolationEasing  // default: swell=0.1
+
+fun Swell(
+    swell: Double = 0.1
+): NewtonPolynomialInterpolationEasing
+```
+
+Control points: `(0.0, 0.0)` → `(0.5, swell)` → `(1.0, 0.0)`
+
+The default `swell = 0.1` adds 10 % to the character's scale at the peak. Keep this value small — large values look jarring at typical lyric font sizes.
+
+Applied to: **scale** of each character, composited on top of the word-level scale transform.
+
+---
+
+### Bounce
+
+A glow or shadow intensity that **peaks at 70 % progress** then fades back to zero, producing a light-burst effect at the moment each character is fully highlighted.
+
+```kotlin
+val Bounce: NewtonPolynomialInterpolationEasing
+```
+
+Control points: `(0.0, 0.0)` → `(0.7, 1.0)` → `(1.0, 0.0)`
+
+Applied to: **shadow blur radius** (glow intensity) drawn beneath each character.
+
+<Expandable title="Bounce control-point rationale">
+  Placing the peak at `0.7` rather than `0.5` means the glow reaches maximum brightness slightly *before* the character finishes animating, which matches the perceptual timing of the audio emphasis and feels more natural than a centred pulse.
+</Expandable>
+
+---
+
+### EasingOutCubic
+
+A standard **ease-out cubic** curve used for the simpler floating animation applied to whole words when `useAwesomeAnimation = false`.
+
+```kotlin
+val EasingOutCubic: CubicBezierEasing  // CubicBezierEasing(0.33f, 1f, 0.68f, 1f)
+```
+
+This is a convenience wrapper around Compose's built-in `CubicBezierEasing` with control points chosen to match the CSS `ease-out-cubic` specification. It produces a fast initial motion that decelerates smoothly to rest.
+
+Applied to: **vertical translation** of the word-level float animation.
+
+---
+
+## Summary table
+
+| Name | Control points | Effect | Applied to |
+|------|---------------|--------|------------|
+| `DipAndRise` | (0,0) → (0.5,−dip) → (1,rise) | Dip then rise | Character Y offset |
+| `Swell` | (0,0) → (0.5,swell) → (1,0) | Scale pulse | Character scale |
+| `Bounce` | (0,0) → (0.7,1) → (1,0) | Light burst | Shadow blur radius |
+| `EasingOutCubic` | Cubic Bézier (0.33, 1, 0.68, 1) | Fast-then-slow | Word Y offset |
+
+<Note>
+  These easings are used internally by the animation system and you typically do not need to interact with them directly. They are exposed publicly so that you can pass custom instances when overriding the animation parameters — for example, to flatten `DipAndRise` for a less bouncy feel:
+
+  ```kotlin
+  val gentleRise = DipAndRise(dip = 0.1, rise = 1.0)
+  ```
+</Note>

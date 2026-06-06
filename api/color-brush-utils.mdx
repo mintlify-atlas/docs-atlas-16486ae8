@@ -1,0 +1,157 @@
+---
+title: "Color and Brush Utility Functions Reference"
+sidebarTitle: "Color & Brush Utils"
+description: "Reference for Color.copyHsl() and Brush.easedHorizontalGradient() — utility extensions for HSL color manipulation and eased gradient creation in Accompanist Lyrics UI."
+---
+
+The library includes two utility extension functions for color and gradient work: `Color.copyHsl()` for non-destructive HSL channel editing, and `Brush.Companion.easedHorizontalGradient()` for generating perceptually smooth horizontal gradients. Both are used internally to produce the highlight colors and fade masks that give the Apple Music-style lyric renderer its look, and both are publicly available for use in custom theming.
+
+---
+
+## Color.copyHsl
+
+Creates a new `Color` by selectively overriding one or more HSL channels. Any channel not explicitly specified retains its current value, making it easy to lighten, darken, or desaturate a color without computing the full HSL decomposition yourself.
+
+```kotlin
+fun Color.copyHsl(
+    hue: Float? = null,
+    saturation: Float? = null,
+    lightness: Float? = null,
+    alpha: Float? = null
+): Color
+```
+
+### Parameters
+
+<ParamField path="hue" type="Float?" >
+  New hue value in degrees. Clamped to `[0, 360]`. Pass `null` to keep the current hue.
+</ParamField>
+
+<ParamField path="saturation" type="Float?" >
+  New saturation value as a fraction. Clamped to `[0.0, 1.0]`. Pass `null` to keep the current saturation. `0f` produces a neutral gray at the same lightness.
+</ParamField>
+
+<ParamField path="lightness" type="Float?" >
+  New lightness value as a fraction. Clamped to `[0.0, 1.0]`. Pass `null` to keep the current lightness. `0f` = black, `1f` = white.
+</ParamField>
+
+<ParamField path="alpha" type="Float?" >
+  New alpha (opacity) value as a fraction. Clamped to `[0.0, 1.0]`. Pass `null` to keep the current alpha. The alpha channel is read directly from the `Color` object rather than from the HSL conversion.
+</ParamField>
+
+### Returns
+
+A new `Color` with the requested channels replaced. The original color is not modified.
+
+### Conversion pipeline
+
+Internally, `copyHsl` converts the receiver from RGB to HSL, replaces the requested channels, then converts back to RGB:
+
+```
+Color (RGBA) → toHsl() → [h, s, l]
+                              │  override requested channels
+                              ▼
+                         [h′, s′, l′]  →  hslToColor()  →  Color (RGBA)
+```
+
+### Examples
+
+```kotlin
+// Make a color 20 % lighter
+val lighter = brandColor.copyHsl(lightness = (brandColor.toHsl()[2] + 0.2f).coerceAtMost(1f))
+
+// Desaturate to a neutral gray (preserves lightness)
+val gray = brandColor.copyHsl(saturation = 0f)
+
+// Shift hue by 30 degrees (warm → cooler tint)
+val shifted = brandColor.copyHsl(hue = (currentHue + 30f) % 360f)
+
+// Reduce opacity while keeping color
+val faded = brandColor.copyHsl(alpha = 0.4f)
+```
+
+---
+
+## Brush.Companion.easedHorizontalGradient
+
+Creates a `Brush.horizontalGradient` that applies a custom `Easing` function between each pair of color stops, producing a smoother visual transition than Compose's built-in linear gradient interpolation.
+
+```kotlin
+fun Brush.Companion.easedHorizontalGradient(
+    vararg colorStops: Pair<Float, Color>,
+    easing: Easing = EaseInQuart,
+    endX: Float = 1f,
+    steps: Int = 100
+): Brush
+```
+
+### Parameters
+
+<ParamField path="colorStops" type="vararg Pair<Float, Color>" required>
+  One or more `(position, Color)` pairs that define the gradient. Positions are in the same coordinate space as `Brush.horizontalGradient`'s `startX`/`endX` — typically `0f` to `1f` for a normalised gradient, or pixel values when used with a specific `endX`. Stops are sorted by position before processing, so order does not matter.
+</ParamField>
+
+<ParamField path="easing" type="Easing">
+  The `Easing` function applied to color interpolation within each segment. Defaults to `EaseInQuart`, which produces a slow-start, fast-end fade that looks natural for edge-masking gradients. Any Compose `Easing` instance is accepted, including the [custom Newton easings](/api/easing-functions) defined by this library.
+</ParamField>
+
+<ParamField path="endX" type="Float">
+  Passed directly to `Brush.horizontalGradient` as the `endX` bound. Defaults to `1f` (normalised). Set to a pixel value (e.g., `canvasWidthPx`) when the brush will be applied to a canvas with a known pixel size.
+</ParamField>
+
+<ParamField path="steps" type="Int">
+  The number of intermediate color stops generated **per segment** between adjacent color-stop pairs. Higher values produce a smoother curve at the cost of a larger stop list. The default of `100` is sufficient for gradients up to a few hundred pixels wide. Decrease to `20–30` for very narrow elements.
+</ParamField>
+
+### Returns
+
+A `Brush` (specifically a `LinearGradient`) with `steps × (colorStops.size − 1) + 1` color stops. Edge cases: an empty `colorStops` returns `SolidColor(Color.Transparent)`; a single stop returns `SolidColor(stop.color)`.
+
+### How it works
+
+For each consecutive pair of stops `(startFraction, startColor)` and `(endFraction, endColor)`, the function generates `steps + 1` intermediate stops:
+
+```
+for j in 0..steps:
+    localLinear  = j / steps                    // linear progress within segment
+    localEased   = easing.transform(localLinear) // eased progress (controls color)
+    globalFrac   = lerp(startFraction, endFraction, localLinear)
+    stopColor    = lerp(startColor, endColor, localEased)
+```
+
+By keeping the *position* (`globalFrac`) linear while making the *color* (`stopColor`) follow the easing curve, the physical width of the gradient matches the stop fractions exactly while the color transition follows the desired shape.
+
+### Why linear gradients look harsh
+
+Compose's `Brush.horizontalGradient` interpolates colors linearly in sRGB space between stops. For dark-to-transparent fades, this produces a visible dark band near the transparent end because sRGB is not perceptually uniform. `easedHorizontalGradient` with `EaseInQuart` pushes most of the color toward the opaque end and spends most of the gradient width near transparency, which looks smoother to the eye.
+
+### Examples
+
+```kotlin
+// Fade-out mask applied to the left edge of a lyrics canvas
+val leftFade = Brush.easedHorizontalGradient(
+    0f to Color.Transparent,
+    0.15f to Color.White,
+    easing = EaseInQuart
+)
+
+// A two-color highlight gradient with a custom easing
+val highlight = Brush.easedHorizontalGradient(
+    0f to primaryColor,
+    1f to secondaryColor,
+    easing = CubicBezierEasing(0.25f, 0.1f, 0.25f, 1f),
+    endX = canvasWidthPx,
+    steps = 50
+)
+
+// High-resolution gradient for a wide display
+val wideGradient = Brush.easedHorizontalGradient(
+    0f to Color.Transparent,
+    1f to Color.White,
+    steps = 200
+)
+```
+
+<Tip>
+  When using `easedHorizontalGradient` as a `ShaderBrush` in a `drawWithContent` modifier, pass the measured component width as `endX` so the gradient fills the component exactly, rather than being scaled from normalised `[0, 1]` coordinates.
+</Tip>

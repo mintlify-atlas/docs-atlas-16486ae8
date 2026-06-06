@@ -1,0 +1,74 @@
+---
+title: "Accompanist Lyrics UI: Karaoke Lyrics for Compose"
+sidebarTitle: "Introduction"
+description: "Accompanist Lyrics UI is a Compose Multiplatform library for rendering Apple Music-style karaoke lyrics with syllable animations, multi-voice support, and breathing dot interludes."
+---
+
+Accompanist Lyrics UI is a Compose Multiplatform library that brings Apple Music-style karaoke lyrics rendering to Android and JVM applications. Built for developers who need rich, synchronized lyric displays, it handles everything from syllable-level fill animations and spring-physics list placement to breathing dot interludes and RTL text detection — all within a single `KaraokeLyricsView` composable that plugs directly into your existing media playback setup.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Add the dependency and render your first animated lyrics view in minutes.
+  </Card>
+  <Card title="Lyrics Model" icon="database" href="/concepts/lyrics-model">
+    Understand the SyncedLyrics data model that powers the view.
+  </Card>
+  <Card title="KaraokeLyricsView Guide" icon="book-open" href="/guides/karaoke-lyrics">
+    Deep-dive into configuration, customization, and advanced usage patterns.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/karaoke-lyrics-view">
+    Full parameter reference for KaraokeLyricsView and related composables.
+  </Card>
+</CardGroup>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Karaoke Fill Gradient" icon="paintbrush">
+    Syllables light up with a smooth fill gradient that tracks playback position in real time, matching the visual style of Apple Music lyrics.
+  </Card>
+  <Card title="Character-Level Animations" icon="sparkles">
+    Each syllable can independently animate with one of three physics-driven styles: **DipAndRise**, **Swell**, and **Bounce** — selected automatically based on syllable metrics.
+  </Card>
+  <Card title="Multi-Voice & Duet Support" icon="microphone">
+    Distinct main-vocal and accompaniment lines are styled separately and positioned independently, making duet and backing-vocal lyrics easy to represent.
+  </Card>
+  <Card title="Breathing Dots for Interludes" icon="ellipsis">
+    Animated breathing dots appear automatically during instrumental interludes and song intros longer than five seconds, keeping the screen alive between vocal sections.
+  </Card>
+  <Card title="Synced Line Support" icon="clock">
+    Alongside full karaoke syllable timing, standard time-synced lines (`SyncedLine`) are rendered with the same blur, focus, and click interactions.
+  </Card>
+  <Card title="RTL Text Detection" icon="arrow-right-arrow-left">
+    Arabic, Hebrew, and other right-to-left scripts are detected per-syllable and automatically aligned to the end of the line — no manual configuration required.
+  </Card>
+  <Card title="Spring-Physics List Placement" icon="wave-sine">
+    Lines animate into position using a configurable spring with stiffness that scales by distance from the active line, giving the list a natural, fluid feel.
+  </Card>
+  <Card title="Blur Effect on Inactive Lines" icon="eye-slash">
+    Non-active lines receive a progressive blur proportional to their distance from the focused line, drawing the viewer's eye to the current lyric. Disable with `useBlurEffect = false`.
+  </Card>
+  <Card title="Translations & Phonetics" icon="language">
+    Optional translation and phonetic text layers (e.g. pinyin) can be shown below each line and are toggled independently via `showTranslation` and `showPhonetic`.
+  </Card>
+  <Card title="Compose Multiplatform" icon="mobile">
+    Targets **Android (minSdk 29)** and **JVM** through Kotlin Multiplatform, sharing all rendering code across platforms.
+  </Card>
+</CardGroup>
+
+## Repository Structure
+
+The Accompanist project is split into two focused artifacts:
+
+- **`lyrics-core`** — Parses TTML (Apple Music format) and LRC lyrics files, holds the `SyncedLyrics` data model, and handles export. Hosted at [github.com/6xingyv/Accompanist-Lyrics](https://github.com/6xingyv/Accompanist-Lyrics).
+- **`lyrics-ui`** — The rendering layer built on Jetpack Compose and Compose Multiplatform. This is the library described in this documentation, hosted at [github.com/6xingyv/Accompanist](https://github.com/6xingyv/Accompanist).
+
+This separation keeps parsing logic independent of any UI framework. You can use `lyrics-core` alone to manipulate lyric data in non-UI contexts, while `lyrics-ui` depends on it for the data model it renders.
+
+<Note>
+  `lyrics-ui` declares `lyrics-core` as a transitive dependency, but you will typically want to add it explicitly to your own `dependencies` block so you can call the parser APIs directly in your application code.
+</Note>
+
+## License
+
+Accompanist Lyrics UI is released under the **Apache License 2.0**. You are free to use, modify, and distribute it in both open-source and commercial projects. See the [LICENSE](http://www.apache.org/licenses/LICENSE-2.0.txt) file for the full terms.

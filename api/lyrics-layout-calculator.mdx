@@ -1,0 +1,278 @@
+---
+title: "Lyrics Layout Calculator Functions Reference"
+sidebarTitle: "Layout Calculator"
+description: "Reference for the layout calculation functions: measureSyllablesAndDetermineAnimation, calculateBalancedLines, calculateStaticLineLayout, and calculateRowRenderData."
+---
+
+The layout calculator functions form the pipeline that transforms raw `KaraokeSyllable` data into the fully positioned, animation-ready [`SyllableLayout`](/api/syllable-layout) objects that the drawing layer consumes. Each function in the pipeline is pure and stateless — they operate on immutable lists and return new lists, making them safe to call from within Compose's `remember` / `LaunchedEffect` blocks.
+
+## Pipeline Overview
+
+The four functions must be called in order. Each stage feeds its output directly into the next.
+
+1. **`measureSyllablesAndDetermineAnimation`** — Invoke `TextMeasurer` for every syllable, cache per-character layouts, and decide whether to use the character-level "awesome" animation or the simpler word-scale animation.
+2. **`calculateBalancedLines`** — Wrap the flat list of `SyllableLayout` objects into rows using a dynamic-programming badness minimisation algorithm. Returns [`WrappedLine`](/api/wrapped-line) objects whose syllables still have `position = Offset.Zero`.
+3. **`calculateStaticLineLayout`** — Assign real `x`/`y` canvas coordinates to every syllable and fill in `wordPivot`, `wordAnimInfo`, and `charOffsetInWord`.
+4. **`calculateRowRenderData`** — Compute bounding rectangles and timing windows for each row so that the `Canvas` drawing code can call `saveLayer` with tight bounds.
+
+```
+KaraokeSyllable[]
+        │
+        ▼
+measureSyllablesAndDetermineAnimation()
+        │  List<SyllableLayout>  (positions = Zero)
+        ▼
+calculateBalancedLines()
+        │  List<WrappedLine>
+        ▼
+calculateStaticLineLayout()
+        │  List<List<SyllableLayout>>  (positions populated)
+        ▼
+calculateRowRenderData()
+        │  List<RowRenderData>
+        ▼
+  KaraokeLineText  (drawing)
+```
+
+---
+
+## measureSyllablesAndDetermineAnimation
+
+Measures every syllable with the provided `TextMeasurer` and determines whether each word qualifies for character-level animation.
+
+```kotlin
+fun measureSyllablesAndDetermineAnimation(
+    syllables: List<KaraokeSyllable>,
+    textMeasurer: TextMeasurer,
+    style: TextStyle,
+    phoneticStyle: TextStyle,
+    isAccompanimentLine: Boolean,
+    spaceWidth: Float
+): List<SyllableLayout>
+```
+
+### Parameters
+
+<ParamField path="syllables" type="List<KaraokeSyllable>" required>
+  The ordered list of `KaraokeSyllable` objects for the line. Must preserve the original lyric order; timing values are read directly from each item.
+</ParamField>
+
+<ParamField path="textMeasurer" type="TextMeasurer" required>
+  A `TextMeasurer` instance obtained from `rememberTextMeasurer()`. Expensive to create — pass the one from the composable rather than constructing a new one.
+</ParamField>
+
+<ParamField path="style" type="TextStyle" required>
+  The `TextStyle` used for the main lyric text. Applied to every `textMeasurer.measure()` call for syllable content.
+</ParamField>
+
+<ParamField path="phoneticStyle" type="TextStyle" required>
+  The `TextStyle` used for phonetic annotations (pinyin, romaji, etc.). Applied only when a syllable's `phonetic` field is non-null and non-blank.
+</ParamField>
+
+<ParamField path="isAccompanimentLine" type="Boolean" required>
+  Pass `true` for background/accompaniment lines. Accompaniment lines always use the simple word-scale animation regardless of timing, because they are not the focus of the display.
+</ParamField>
+
+<ParamField path="spaceWidth" type="Float" required>
+  The pixel width of a single space character at the current `style`. Used to re-add trailing-space width that `TextMeasurer` may elide when measuring text that ends with whitespace.
+</ParamField>
+
+### Returns
+
+`List<SyllableLayout>` with all fields populated **except** `position`, `wordPivot`, `wordAnimInfo`, and `charOffsetInWord` — those are set by later pipeline stages.
+
+### Animation mode decision
+
+`useAwesomeAnimation` is set to `true` for all syllables in a word when **all** of the following hold:
+
+| Condition | Value |
+|-----------|-------|
+| Per-character duration | > 200 ms |
+| Total word duration | ≥ 1 000 ms |
+| Script | Not CJK, Arabic, or Devanagari |
+| Line type | Not an accompaniment line |
+
+When `useAwesomeAnimation = true`, the function also pre-measures `charLayouts` and `charOriginalBounds` so the draw phase never has to call `TextMeasurer` again.
+
+---
+
+## calculateBalancedLines
+
+Wraps a flat list of `SyllableLayout` objects into display rows using a dynamic-programming line-breaking algorithm that minimises the sum of squared end-of-line slack (typographic *badness*).
+
+```kotlin
+fun calculateBalancedLines(
+    syllableLayouts: List<SyllableLayout>,
+    availableWidthPx: Float,
+    textMeasurer: TextMeasurer,
+    style: TextStyle
+): List<WrappedLine>
+```
+
+### Parameters
+
+<ParamField path="syllableLayouts" type="List<SyllableLayout>" required>
+  The output of `measureSyllablesAndDetermineAnimation()`. Syllables must still be in lyric order.
+</ParamField>
+
+<ParamField path="availableWidthPx" type="Float" required>
+  Maximum row width in pixels. Syllables are placed until this limit would be exceeded, then a new row starts.
+</ParamField>
+
+<ParamField path="textMeasurer" type="TextMeasurer" required>
+  Used only by the internal `trimDisplayLineTrailingSpaces()` helper to re-measure trailing syllables after trailing whitespace is stripped.
+</ParamField>
+
+<ParamField path="style" type="TextStyle" required>
+  Passed through to `trimDisplayLineTrailingSpaces()`.
+</ParamField>
+
+### Returns
+
+`List<WrappedLine>` — each item holds the syllables for one display row and the row's total rendered width. Syllable positions are **not** set yet.
+
+### Algorithm
+
+The algorithm fills a `costs` array of size `n + 1` where `costs[i]` is the minimum total badness achievable when breaking the first `i` syllables optimally. Badness for a line ending at position `i` starting at position `j` is:
+
+```
+badness = (availableWidthPx − lineWidth)²
+```
+
+Word boundaries are respected — the inner loop skips break points that would split a word across lines. If the DP finds no finite-cost solution (e.g., a single word is wider than `availableWidthPx`), it falls back to `calculateGreedyWrappedLines()`, which breaks at word boundaries and syllable boundaries when no alternative exists.
+
+<Tip>
+  For most lines the DP produces noticeably more even line lengths than greedy wrapping, which matters most for two- and three-line blocks where unbalanced rows look awkward.
+</Tip>
+
+---
+
+## calculateStaticLineLayout
+
+Assigns real canvas coordinates to every syllable and populates the word-level animation fields.
+
+```kotlin
+fun calculateStaticLineLayout(
+    wrappedLines: List<WrappedLine>,
+    isLineRightAligned: Boolean,
+    canvasWidth: Float,
+    lineHeight: Float,
+    phoneticHeight: Float,
+    isRtl: Boolean
+): List<List<SyllableLayout>>
+```
+
+### Parameters
+
+<ParamField path="wrappedLines" type="List<WrappedLine>" required>
+  The output of `calculateBalancedLines()`.
+</ParamField>
+
+<ParamField path="isLineRightAligned" type="Boolean" required>
+  When `true`, each row starts at `canvasWidth − row.totalWidth` so that the text is flush with the right edge of the canvas.
+</ParamField>
+
+<ParamField path="canvasWidth" type="Float" required>
+  Full pixel width of the drawing canvas. Used as the reference for right-alignment calculations.
+</ParamField>
+
+<ParamField path="lineHeight" type="Float" required>
+  Pixel height of one text row, used to compute the `y` origin for each successive row.
+</ParamField>
+
+<ParamField path="phoneticHeight" type="Float" required>
+  Pixel height reserved for phonetic annotations. When any syllable in the block carries a phonetic layout, each row's `y` origin is shifted down by `phoneticHeight × 0.7` and an equivalent gap is added above the first row.
+</ParamField>
+
+<ParamField path="isRtl" type="Boolean" required>
+  When `true`, syllables are placed right-to-left within each row's start offset, so the first syllable appears at the rightmost position.
+</ParamField>
+
+### Returns
+
+`List<List<SyllableLayout>>` — the outer list corresponds to rows; the inner list to syllables within each row. Every `SyllableLayout` in the returned structure has its `position`, `wordPivot`, `wordAnimInfo`, and `charOffsetInWord` fields fully populated.
+
+### Layout logic
+
+- **Y coordinates:** `rowTopY = lineIndex × rowHeight + phoneticOffset`. Within a row, syllables are additionally offset by `maxBaselineInLine − syllable.firstBaseline` so that their text baselines are aligned even when font sizes differ.
+- **X coordinates (LTR):** `currentX` starts at `startX` and advances by `syllable.width` after each syllable.
+- **X coordinates (RTL):** `currentX` starts at `startX + row.totalWidth` and retreats by `syllable.width` before placing each syllable.
+- **wordPivot:** `Offset(x = (minX + maxX) / 2, y = bottomY)` computed across all syllables sharing a `wordId`.
+- **wordAnimInfo:** Created once per word (only when `useAwesomeAnimation = true`) and attached to every syllable in that word.
+
+---
+
+## calculateRowRenderData
+
+Computes per-row bounding rectangles and timing windows used by the canvas drawing phase.
+
+```kotlin
+fun calculateRowRenderData(
+    lineLayouts: List<List<SyllableLayout>>,
+    showPhonetic: Boolean,
+    density: Float,
+    edgePaddingDp: Float = 8f
+): List<RowRenderData>
+```
+
+### Parameters
+
+<ParamField path="lineLayouts" type="List<List<SyllableLayout>>" required>
+  The output of `calculateStaticLineLayout()` — syllables with fully populated positions.
+</ParamField>
+
+<ParamField path="showPhonetic" type="Boolean" required>
+  When `true`, phonetic annotation heights are included in the `layerBounds` calculation so that the `saveLayer` call covers phonetic text.
+</ParamField>
+
+<ParamField path="density" type="Float" required>
+  Display density (`Density.density`) used to convert the padding values from dp to pixels.
+</ParamField>
+
+<ParamField path="edgePaddingDp" type="Float">
+  Extra padding in dp added to the top and bottom of `layerBounds`. Defaults to `8f`. Increase this if glow effects at the row edges are being clipped.
+</ParamField>
+
+### Returns
+
+`List<RowRenderData>` — one entry per non-empty row. See [`RowRenderData`](/api/wrapped-line#rowrenderdata) for field documentation.
+
+### Padding calculation
+
+```
+verticalPadding   = (rowHeight × 0.1) × density
+horizontalPadding = (rowWidth  × 0.2) × density
+edgePaddingPx     = edgePaddingDp     × density
+```
+
+The generous horizontal padding ensures that glow and shadow effects on the first and last characters of a row are not clipped by the `saveLayer` bounds.
+
+---
+
+## groupIntoWords
+
+Groups a flat syllable list into word-sized sub-lists by detecting word boundaries.
+
+```kotlin
+fun groupIntoWords(syllables: List<KaraokeSyllable>): List<List<KaraokeSyllable>>
+```
+
+<ParamField path="syllables" type="List<KaraokeSyllable>" required>
+  Ordered list of `KaraokeSyllable` objects for a single line.
+</ParamField>
+
+A syllable is treated as the **last syllable of a word** when its `content` string contains trailing whitespace — that is, `content.trimEnd().length < content.length`. This mirrors the convention used in most karaoke lyric formats where a space after a syllable indicates a word boundary.
+
+<Note>
+  `groupIntoWords` is called internally by `measureSyllablesAndDetermineAnimation` and does not need to be called directly in normal usage.
+</Note>
+
+---
+
+## shouldUseSimpleAnimation (String extension)
+
+```kotlin
+fun String.shouldUseSimpleAnimation(): Boolean
+```
+
+Returns `true` if the receiver string (stripped of whitespace and punctuation) consists entirely of CJK characters or contains any Arabic or Devanagari characters. Used by `measureSyllablesAndDetermineAnimation` to force `useAwesomeAnimation = false` for scripts where per-character bounce animations are visually inappropriate.

@@ -1,0 +1,179 @@
+---
+title: "Rendering Karaoke Lyrics with KaraokeLyricsView"
+sidebarTitle: "Karaoke Lyrics"
+description: "Set up KaraokeLyricsView to render syllable-level animated karaoke lyrics, configure auto-scrolling, and handle user interactions like seek and share."
+---
+
+`KaraokeLyricsView` is the central composable in Accompanist Lyrics UI. It renders an Apple Music-style scrolling lyrics panel that animates at the syllable level — each character dips, rises, and swells as its timing window passes. This guide walks through setting up the view, wiring a high-frequency position provider for smooth animation, understanding auto-scroll behavior, and handling tap and long-press gestures.
+
+## Basic Setup
+
+`KaraokeLyricsView` needs a scroll-list state, a `SyncedLyrics` object, and a few callbacks. Here is the minimal complete example:
+
+```kotlin
+@Composable
+fun LyricsPanel(
+    lyrics: SyncedLyrics,
+    currentPosition: () -> Int,
+    onSeek: (Int) -> Unit,
+    onShare: (ISyncedLine) -> Unit
+) {
+    val listState = rememberLazyListState()
+
+    KaraokeLyricsView(
+        listState = listState,
+        lyrics = lyrics,
+        currentPosition = currentPosition,
+        onLineClicked = { line -> onSeek(line.start) },
+        onLinePressed = { line -> onShare(line) }
+    )
+}
+```
+
+The five required parameters are:
+
+| Parameter | Type | Purpose |
+|---|---|---|
+| `listState` | `LazyListState` | Controls and observes scroll position |
+| `lyrics` | `SyncedLyrics` | The full lyrics data including all lines |
+| `currentPosition` | `() -> Int` | Lambda returning current playback position in ms |
+| `onLineClicked` | `(ISyncedLine) -> Unit` | Called on a single tap — typically used to seek |
+| `onLinePressed` | `(ISyncedLine) -> Unit` | Called on a long press — typically used for share |
+
+## Providing the Current Position
+
+The `currentPosition` parameter is a **lambda**, not a `State<Int>`. This is the most important performance detail in the entire API.
+
+Karaoke animation requires the canvas to redraw on every display frame — potentially 120 times per second. If `currentPosition` were an ordinary `State<Int>`, reading it inside the composable tree would invalidate the full composition on every frame and trigger a cascade of recompositions. Wrapping it in a lambda means the value is only read inside `DrawScope` during the draw phase, which bypasses recomposition entirely.
+
+The pattern used in the sample `PlayerScreen` is:
+
+```kotlin
+@Composable
+fun PlayerScreen(playerViewModel: PlayerViewModel) {
+    val listState = rememberLazyListState()
+
+    // 1. A mutable long that can be updated off the main thread's composition cycle
+    val animatedPositionState = remember { mutableLongStateOf(0L) }
+
+    // 2. A stable lambda captured once — reading the state happens only when the
+    //    lambda is *invoked* inside the Canvas, not at composition time
+    val currentPositionProvider = remember {
+        { animatedPositionState.longValue.toInt() }
+    }
+
+    val isPlaying by remember { derivedStateOf { viewModel.playbackState.isPlaying } }
+
+    // 3. A frame loop that updates the position state every vsync
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                val playbackState = playerViewModel.playbackState
+                val elapsed = System.currentTimeMillis() - playbackState.lastUpdateTime
+                val newPosition = (playbackState.position + elapsed)
+                    .coerceAtMost(playbackState.duration)
+
+                // Only write when necessary to avoid thrashing
+                if (animatedPositionState.longValue <= newPosition ||
+                    kotlin.math.abs(newPosition - animatedPositionState.longValue) >= 100
+                ) {
+                    animatedPositionState.longValue = newPosition
+                }
+                awaitFrame() // suspend until the next vsync frame
+            }
+        } else {
+            animatedPositionState.longValue = playerViewModel.playbackState.position
+        }
+    }
+
+    KaraokeLyricsView(
+        listState = listState,
+        lyrics = lyrics,
+        currentPosition = currentPositionProvider,
+        onLineClicked = { line -> playerViewModel.seekTo(line.start) },
+        onLinePressed = { line -> /* show share sheet */ }
+    )
+}
+```
+
+<Note>
+`awaitFrame()` from `kotlinx.coroutines.android` suspends until the next display frame is scheduled. Using it inside a `while (true)` loop creates a frame-locked update loop that produces smooth animation without busy-waiting.
+</Note>
+
+## Auto-Scrolling Behavior
+
+`KaraokeLyricsView` automatically scrolls the list so the currently active line is always visible near the top of the viewport. The scrolling logic fires whenever `lyricsFocusState.firstIndex` changes — it first tries a cheap `scrollBy` to nudge the list if the target item is already on screen, and falls back to `animateScrollToItem` when the target is off-screen.
+
+Two parameters control the spatial relationship between the focused line and the viewport edge:
+
+- **`offset: Dp`** (default `32.dp`) — vertical padding added to the start and end of the list via `contentPadding`. This ensures the first and last lines are not flush against the screen edges.
+- **`keepAliveZone: Dp`** (default `100.dp`) — extra space maintained above the focused line. The list is scrolled so that the focused line sits at least `offset + keepAliveZone` from the top of the viewport, keeping one or two context lines visible above it.
+
+```kotlin
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = lyrics,
+    currentPosition = currentPositionProvider,
+    onLineClicked = { onSeekTo(it.start) },
+    onLinePressed = { /* ... */ },
+    offset = 48.dp,       // more breathing room at the top and bottom
+    keepAliveZone = 120.dp // keep a taller band of context visible
+)
+```
+
+Auto-scroll is automatically suppressed while the user is dragging the list manually. The internal `isManualScrolling` flag detects this by checking `listState.isScrollInProgress && !scrollInCode.value`, so programmatic scrolls triggered by the library itself do not count as manual scroll.
+
+## Handling User Interactions
+
+### onLineClicked
+
+`onLineClicked` receives the `ISyncedLine` that was tapped. The most common action is to seek the media player to the line's start time:
+
+```kotlin
+onLineClicked = { line ->
+    player.seekTo(line.start.toLong())
+}
+```
+
+`ISyncedLine.start` is the line's start timestamp in **milliseconds**.
+
+### onLinePressed
+
+`onLinePressed` receives the `ISyncedLine` that received a long press. Use this to show a context menu, a share sheet, or a copy dialog:
+
+```kotlin
+onLinePressed = { line ->
+    viewModel.openShareSheet(line)
+}
+```
+
+Both callbacks are wired through `LyricsLineItem`'s `combinedClickable` modifier, so standard accessibility semantics for click and long-click are correctly applied.
+
+## Enabling and Disabling Features
+
+`KaraokeLyricsView` has four Boolean flags that toggle optional visual features:
+
+```kotlin
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = lyrics,
+    currentPosition = currentPositionProvider,
+    onLineClicked = { onSeekTo(it.start) },
+    onLinePressed = { /* ... */ },
+    showTranslation = true,       // show per-line translation text
+    showPhonetic = true,          // show per-syllable phonetic (ruby) text
+    useBlurEffect = true,         // blur non-active lines based on distance
+    showDebugRectangles = false   // draw red/green bounding boxes around glyphs
+)
+```
+
+| Flag | Default | Effect |
+|---|---|---|
+| `showTranslation` | `true` | Renders `KaraokeLine.translation` or `SyncedLine.translation` below the line |
+| `showPhonetic` | `true` | Renders per-syllable phonetic text above each syllable |
+| `useBlurEffect` | `true` | Applies a Gaussian blur to inactive lines proportional to their distance from the focused line |
+| `showDebugRectangles` | `false` | Draws red outlines around individual character bounding boxes and green outlines around syllable boxes — useful for diagnosing layout issues |
+
+<Tip>
+Disable `useBlurEffect` on low-end devices to conserve GPU bandwidth. The library passes `useBlurEffect = false` in the sample app to keep the demo performant on a wider range of hardware.
+</Tip>

@@ -1,47 +1,146 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Accompanist Lyrics UI"
+sidebarTitle: "Quickstart"
+description: "Learn how to add karaoke lyrics rendering to your Compose Multiplatform app in four steps, from dependency setup to your first animated lyrics view."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+By the end of this guide you will have a fully animated, Apple Music-style karaoke lyrics view running inside your Compose Multiplatform application. You will add the required Gradle dependencies, parse a lyrics file into a `SyncedLyrics` object, wire up a `LazyListState`, and render `KaraokeLyricsView` with seek-on-tap support — all in under 30 lines of composable code.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
 
-    ```bash
-    npm install your-package
-    ```
-  </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+<Step title="Add Dependencies">
 
-    ```bash
-    your-cli init
-    ```
-  </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+Add both `lyrics-ui` and `lyrics-core` to your module's `build.gradle.kts`. The `lyrics-ui` artifact provides the composable renderer; `lyrics-core` provides the parser and the `SyncedLyrics` data model.
 
-    ```bash
-    your-cli start
-    ```
-  </Step>
+```kotlin
+// build.gradle.kts (module)
+dependencies {
+    implementation("com.mocharealm.accompanist:lyrics-ui:1.0.18")
+    implementation("com.mocharealm.accompanist:lyrics-core:0.4.4")
+}
+```
+
+After syncing, verify the dependency tree resolves correctly before moving on.
+
+</Step>
+
+<Step title="Parse Your Lyrics File">
+
+Use `lyrics-core`'s parser to read your lyrics file and produce a `SyncedLyrics` object. The library supports **TTML** (the format used by Apple Music) and **LRC** (the common karaoke format).
+
+```kotlin
+// Load the raw lyrics string from assets, network, or disk
+val rawTtml: String = loadLyricsFromAssets("song.ttml")
+
+// Parse into a SyncedLyrics model
+val syncedLyrics: SyncedLyrics = TtmlParser.parse(rawTtml)
+```
+
+`SyncedLyrics` holds a flat list of `ISyncedLine` entries — either `KaraokeLine` (with syllable-level timing) or `SyncedLine` (with line-level timing). `KaraokeLyricsView` handles both types automatically.
+
+</Step>
+
+<Step title="Set Up LazyListState">
+
+`KaraokeLyricsView` manages its own auto-scroll behaviour, but it needs a `LazyListState` so you can observe or control the list position from outside the composable if required.
+
+```kotlin
+@Composable
+fun LyricsScreen(player: Player, syncedLyrics: SyncedLyrics) {
+    val listState = rememberLazyListState()
+
+    // Pass listState to KaraokeLyricsView in the next step
+}
+```
+
+Keeping `listState` in the calling composable also lets you implement features like "jump to top" buttons or scroll-position persistence across recompositions.
+
+</Step>
+
+<Step title="Render KaraokeLyricsView">
+
+Place `KaraokeLyricsView` in your composable hierarchy. Supply the `listState`, your `SyncedLyrics` object, and lambdas that read the current playback position and respond to user interactions.
+
+```kotlin
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
+
+@Composable
+fun LyricsScreen(player: Player, syncedLyrics: SyncedLyrics) {
+    val listState = rememberLazyListState()
+
+    KaraokeLyricsView(
+        listState = listState,
+        lyrics = syncedLyrics,
+        currentPosition = { player.currentPosition.toInt() },
+        onLineClicked = { line -> player.seekTo(line.start.toLong()) },
+        onLinePressed = { line -> /* show share sheet or context menu */ },
+        modifier = Modifier.fillMaxSize()
+    )
+}
+```
+
+`currentPosition` is a lambda — not a `State` — so it is read on every frame during animation without triggering recomposition. `onLineClicked` receives the `ISyncedLine` that was tapped, making seek-to-line a one-liner.
+
+</Step>
+
+<Step title="Customize Styles (Optional)">
+
+`KaraokeLyricsView` exposes several parameters for visual customization. All of them have sensible defaults so you only need to set the ones you want to change:
+
+```kotlin
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = syncedLyrics,
+    currentPosition = { player.currentPosition.toInt() },
+    onLineClicked = { line -> player.seekTo(line.start.toLong()) },
+    onLinePressed = { line -> },
+    // Typography
+    normalLineTextStyle = MaterialTheme.typography.headlineMedium.copy(
+        fontWeight = FontWeight.Bold,
+        textMotion = TextMotion.Animated
+    ),
+    accompanimentLineTextStyle = MaterialTheme.typography.bodyLarge.copy(
+        fontWeight = FontWeight.Bold,
+        textMotion = TextMotion.Animated
+    ),
+    // Colour and blending
+    textColor = Color.White,
+    blendMode = BlendMode.Plus,        // Additive blend for glow effect
+    // Effects
+    useBlurEffect = true,              // Blur inactive lines
+    showTranslation = true,            // Show translation layer if present
+    showPhonetic = true,               // Show phonetic layer (e.g. pinyin)
+    modifier = Modifier.fillMaxSize()
+)
+```
+
+</Step>
+
 </Steps>
 
 <Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+  To achieve the full Apple Music glow effect, set `blendMode = BlendMode.Plus` **and** wrap `KaraokeLyricsView` in a `graphicsLayer` with `CompositingStrategy.Offscreen`. Additive blending requires an offscreen compositing layer to render correctly; without it the blended pixels will be composited against the wrong background.
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+  ```kotlin
+  Box(
+      modifier = Modifier
+          .fillMaxSize()
+          .graphicsLayer {
+              compositingStrategy = CompositingStrategy.Offscreen
+          }
+  ) {
+      KaraokeLyricsView(
+          // ...
+          blendMode = BlendMode.Plus,
+      )
+  }
+  ```
 </Tip>
+
+<Note>
+  This guide only covers the basics. See the [KaraokeLyricsView guide](/guides/karaoke-lyrics) for detailed walkthroughs of duet layouts, custom breathing dot styles, RTL handling, phonetic text, and performance tuning.
+</Note>

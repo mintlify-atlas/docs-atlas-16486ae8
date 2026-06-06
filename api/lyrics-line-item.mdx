@@ -1,0 +1,149 @@
+---
+title: "LyricsLineItem Composable API Reference"
+sidebarTitle: "LyricsLineItem"
+description: "API reference for LyricsLineItem — a wrapper composable that applies focus-based alpha, scale, blur, and blend mode to lyric line content."
+---
+
+`LyricsLineItem` is a layout wrapper that applies all focus-driven visual effects to a lyric line — animated scale, animated alpha, optional blur, blend mode compositing, and click / long-press gesture handling. It wraps any composable `content` in a `Box` with a `graphicsLayer` that reads the animated values. Both [`KaraokeLineText`](/api/karaoke-line-text) and [`SyncedLineText`](/api/synced-line-text) are placed inside `LyricsLineItem` instances within [`KaraokeLyricsView`](/api/karaoke-lyrics-view), but you can use this wrapper independently to give any custom lyric content the same Apple Music–style focus effects.
+
+## Function Signature
+
+```kotlin
+@Composable
+fun LyricsLineItem(
+    isFocused: Boolean,
+    isRightAligned: Boolean,
+    onLineClicked: () -> Unit,
+    onLinePressed: () -> Unit,
+    blurRadius: () -> Float,
+    modifier: Modifier = Modifier,
+    activeAlpha: Float = 1f,
+    inactiveAlpha: Float = 0.4f,
+    blendMode: BlendMode = BlendMode.SrcOver,
+    isInteractive: Boolean = true,
+    content: @Composable () -> Unit
+)
+```
+
+## Parameters
+
+<ParamField query="isFocused" type="Boolean" required>
+  Whether this line is the currently active (sung) line. When `true`, the composable animates to `activeAlpha` and `scale = 1.0f`; when `false`, it animates to `inactiveAlpha` and `scale = 0.98f`. Toggling this value triggers the scale and alpha animations automatically.
+</ParamField>
+
+<ParamField query="isRightAligned" type="Boolean" required>
+  Controls the `transformOrigin` pivot point for the scale animation. When `true`, the scale transform originates from the trailing (right) edge of the line — correct for RTL text or `KaraokeAlignment.End` lines. When `false`, it originates from the leading (left) edge.
+</ParamField>
+
+<ParamField query="onLineClicked" type="() -> Unit" required>
+  Callback invoked when the user taps the line. Wired to the `onClick` handler of `combinedClickable`. Ignored (no-op gesture setup) when `isInteractive` is `false`.
+</ParamField>
+
+<ParamField query="onLinePressed" type="() -> Unit" required>
+  Callback invoked when the user long-presses the line. Wired to the `onLongClick` handler of `combinedClickable`. Ignored when `isInteractive` is `false`.
+</ParamField>
+
+<ParamField query="blurRadius" type="() -> Float" required>
+  A lambda returning the current blur radius in pixels. The composable reads this on every frame inside `graphicsLayer`. When the returned value is greater than `0`, a `BlurEffect` with equal `radiusX` and `radiusY` using `TileMode.Clamp` is applied as the `renderEffect`. When the value is `0` or less, no render effect is set and no blur is applied. `KaraokeLyricsView` passes an `animateFloatAsState`-backed lambda here so blur transitions smoothly.
+</ParamField>
+
+<ParamField query="modifier" type="Modifier" default="Modifier">
+  Modifier applied to the outermost `Box` before the internal `fillMaxWidth()` and `graphicsLayer` modifiers. Use this to add external padding or alignment when embedding `LyricsLineItem` in a custom layout.
+</ParamField>
+
+<ParamField query="activeAlpha" type="Float" default="1f">
+  The target alpha value when `isFocused` is `true`. The alpha animates to this value using the default `animateFloatAsState` spec (a spring). Must be in the range `0.0`–`1.0`.
+</ParamField>
+
+<ParamField query="inactiveAlpha" type="Float" default="0.4f">
+  The target alpha value when `isFocused` is `false`. Defaults to `0.4f` — a 40 % opacity that dims inactive lines without making them invisible. `KaraokeLineText` overrides this to `0.2f` for accompaniment sub-lines that appear alongside the main line.
+</ParamField>
+
+<ParamField query="blendMode" type="BlendMode" default="BlendMode.SrcOver">
+  The blend mode applied inside `graphicsLayer`. This is applied via `CompositingStrategy.Offscreen`, which forces the composable and all its children to be rendered into an offscreen buffer before being composited onto the scene. This ensures the blend mode applies to the entire line as a unit, not to individual children. Match this to the `blendMode` passed to the line content composables inside `content`.
+</ParamField>
+
+<ParamField query="isInteractive" type="Boolean" default="true">
+  When `true`, the `Box` gains a `clip(ContinuousRoundedRectangle(8.dp))` and a `combinedClickable` modifier that routes taps to `onLineClicked` and long-presses to `onLinePressed`. When `false`, no gesture modifiers are applied — useful for accompaniment sub-lines or decorative elements that should not be individually tappable.
+</ParamField>
+
+<ParamField query="content" type="@Composable () -> Unit" required>
+  The lyric line content to wrap. Typically a [`KaraokeLineText`](/api/karaoke-line-text) or [`SyncedLineText`](/api/synced-line-text) composable. The content is placed inside the `Box` and inherits all the animated graphics-layer effects.
+</ParamField>
+
+## Animation Details
+
+`LyricsLineItem` uses two independent `animateFloatAsState` instances:
+
+**Scale animation** — animates between `0.98f` (inactive) and `1.0f` (focused):
+- **Focusing** (`isFocused = true`): `tween(durationMillis = 600, easing = LinearOutSlowInEasing)` — a slow, satisfying settle into focus.
+- **Unfocusing** (`isFocused = false`): `tween(durationMillis = 300, easing = EaseInOut)` — a quicker, symmetrical shrink.
+
+**Alpha animation** — animates between `inactiveAlpha` and `activeAlpha` using the default `animateFloatAsState` spring spec.
+
+The `transformOrigin` is fixed at `(if (isRightAligned) 1f else 0f, 1f)` — the bottom-leading or bottom-trailing corner — so lines appear to grow from their natural anchor point rather than from their center.
+
+## Usage Example
+
+<CodeGroup>
+
+```kotlin Standard Interactive Line
+@Composable
+fun MyLyricLine(
+    line: KaraokeLine.MainKaraokeLine,
+    isFocused: Boolean,
+    blurRadius: () -> Float,
+    onSeek: (Int) -> Unit
+) {
+    LyricsLineItem(
+        isFocused = isFocused,
+        isRightAligned = false,
+        onLineClicked = { onSeek(line.start) },
+        onLinePressed = { /* show context menu */ },
+        blurRadius = blurRadius,
+        blendMode = BlendMode.Plus
+    ) {
+        KaraokeLineText(
+            line = line,
+            currentTimeProvider = { /* player position */ 0 },
+            activeColor = Color.White,
+            blendMode = BlendMode.Plus
+        )
+    }
+}
+```
+
+```kotlin Non-Interactive Accompaniment Line
+// Used by KaraokeLineText internally for accompaniment sub-lines
+LyricsLineItem(
+    isFocused = true,
+    isRightAligned = isRightAligned,
+    onLineClicked = { },
+    onLinePressed = { },
+    blurRadius = { 0f },
+    blendMode = blendMode,
+    activeAlpha = 0.6f,
+    inactiveAlpha = 0.2f,
+    isInteractive = false
+) {
+    KaraokeLineText(
+        line = accompanimentLine,
+        currentTimeProvider = currentTimeProvider,
+        // ...
+    )
+}
+```
+
+</CodeGroup>
+
+<Note>
+  `LyricsLineItem` sets `CompositingStrategy.Offscreen` unconditionally. This means every instance allocates an offscreen render target for the duration of its composition. Avoid nesting multiple `LyricsLineItem` composables unnecessarily to keep GPU memory usage reasonable.
+</Note>
+
+<Tip>
+  The `blurRadius` parameter is a **lambda**, not a `State<Float>`. This means you can pass the `.value` accessor of an `animateFloatAsState` wrapped in a lambda — e.g. `blurRadius = { blurState.value }` — so that blur changes are read inside `graphicsLayer` without triggering recomposition of the entire `LyricsLineItem` tree.
+</Tip>
+
+<Warning>
+  The rounded-rectangle clip shape (`ContinuousRoundedRectangle(8.dp)`) applied when `isInteractive = true` requires the `com.mocharealm.gaze.capsule` dependency that ships with the library. If you are copying this composable into a standalone project, substitute with `RoundedCornerShape(8.dp)` from the standard Compose UI library.
+</Warning>

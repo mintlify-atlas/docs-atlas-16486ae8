@@ -1,72 +1,94 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "Accompanist",
+  "theme": "willow",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#1d89fc",
+    "light": "#73b6fc"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
+  "favicon": "https://media.brand.dev/948755cf-e543-4840-b64f-cc4ed8241a00.png",
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/6xingyv/accompanist-lyrics-ui"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/6xingyv/accompanist-lyrics-ui"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/lyrics-model",
+              "concepts/lyric-formats",
+              "concepts/animations"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/karaoke-lyrics",
+              "guides/synced-lyrics",
+              "guides/multivoice-duet",
+              "guides/translations-phonetics",
+              "guides/theming-styling"
+            ]
+          },
+          {
+            "group": "Sample App",
+            "pages": [
+              "sample/overview",
+              "sample/player-screen"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Composables",
+            "pages": [
+              "api/karaoke-lyrics-view",
+              "api/karaoke-line-text",
+              "api/karaoke-breathing-dots",
+              "api/synced-line-text",
+              "api/lyrics-line-item"
+            ]
+          },
+          {
+            "group": "Data & Layout",
+            "pages": [
+              "api/syllable-layout",
+              "api/lyrics-layout-calculator",
+              "api/wrapped-line"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/easing-functions",
+              "api/spring-placement-modifier",
+              "api/color-brush-utils"
+            ]
+          }
+        ]
+      }
+    ]
   }
 }

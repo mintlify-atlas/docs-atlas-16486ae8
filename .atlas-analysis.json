@@ -1,0 +1,118 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Accompanist Lyrics UI",
+  "projectDescription": "A Compose Multiplatform library that renders Apple Music-style karaoke and synced lyrics with syllable-level animations, multi-voice duet support, and breathing dot interludes.",
+  "theme": "willow",
+  "primaryColor": "#1d89fc",
+  "lightColor": "#73b6fc",
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/lyrics-model",
+              "concepts/lyric-formats",
+              "concepts/animations"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/karaoke-lyrics",
+              "guides/synced-lyrics",
+              "guides/multivoice-duet",
+              "guides/translations-phonetics",
+              "guides/theming-styling"
+            ]
+          },
+          {
+            "group": "Sample App",
+            "pages": [
+              "sample/overview",
+              "sample/player-screen"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Composables",
+            "pages": [
+              "api/karaoke-lyrics-view",
+              "api/karaoke-line-text",
+              "api/karaoke-breathing-dots",
+              "api/synced-line-text",
+              "api/lyrics-line-item"
+            ]
+          },
+          {
+            "group": "Data & Layout",
+            "pages": [
+              "api/syllable-layout",
+              "api/lyrics-layout-calculator",
+              "api/wrapped-line"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/easing-functions",
+              "api/spring-placement-modifier",
+              "api/color-brush-utils"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Syllable-level karaoke fill gradient animations inspired by Apple Music",
+    "Character-level bounce, dip-and-rise, and swell animations for slow syllables",
+    "Multi-voice and duet support with animated accompaniment line visibility",
+    "Breathing dots composable for instrumental intros and interludes",
+    "Synced line (LRC/non-karaoke) rendering with RTL support",
+    "Balanced line-breaking algorithm for aesthetically wrapped lyrics",
+    "Spring-physics-based list item placement with LookaheadScope",
+    "Blur effect on inactive lines with configurable blend mode (e.g., BlendMode.Plus for glow)",
+    "Translation and phonetic (ruby text) display support",
+    "Compose Multiplatform — targets Android and JVM (Desktop)"
+  ],
+  "publicApiSurface": [
+    "KaraokeLyricsView(listState, lyrics, currentPosition, onLineClicked, onLinePressed, ...)",
+    "KaraokeLineText(line, currentTimeProvider, normalLineTextStyle, accompanimentLineTextStyle, phoneticTextStyle, activeColor, blendMode, showTranslation, showPhonetic, ...)",
+    "KaraokeBreathingDots(alignment, startTimeMs, endTimeMs, currentTimeProvider, defaults)",
+    "KaraokeBreathingDotsDefaults(number, size, margin, enterDurationMs, breathingDotsColor, ...)",
+    "SyncedLineText(line, isLineRtl, textStyle, textColor, showTranslation)",
+    "LyricsLineItem(isFocused, isRightAligned, onLineClicked, onLinePressed, blurRadius, blendMode, activeAlpha, inactiveAlpha, ...)",
+    "SyllableLayout(syllable, textLayoutResult, wordId, useAwesomeAnimation, position, wordPivot, ...)",
+    "WordAnimationInfo(wordStartTime, wordEndTime, wordContent, wordDuration)",
+    "WrappedLine(syllables, totalWidth)",
+    "RowRenderData(rowLayouts, totalMinX, totalMaxX, totalWidth, firstSyllableStart, lastSyllableEnd, layerBounds)",
+    "measureSyllablesAndDetermineAnimation(syllables, textMeasurer, style, phoneticStyle, isAccompanimentLine, spaceWidth)",
+    "calculateBalancedLines(syllableLayouts, availableWidthPx, textMeasurer, style)",
+    "calculateStaticLineLayout(wrappedLines, isLineRightAligned, canvasWidth, lineHeight, phoneticHeight, isRtl)",
+    "calculateRowRenderData(lineLayouts, showPhonetic, density)",
+    "drawLyricsLine(rowRenderData, currentTimeMs, color, blendMode, isRtl, showDebugRectangles, showPhonetic)",
+    "Modifier.springPlacement(lookaheadScope, itemKey, isManualScrolling, stiffness)",
+    "Color.copyHsl(hue, saturation, lightness, alpha)",
+    "Brush.Companion.easedHorizontalGradient(colorStops, easing, endX, steps)",
+    "DipAndRise(dip, rise) — NewtonPolynomialInterpolationEasing",
+    "Swell(swell) — NewtonPolynomialInterpolationEasing",
+    "Bounce — NewtonPolynomialInterpolationEasing",
+    "EasingOutCubic — CubicBezierEasing"
+  ]
+}

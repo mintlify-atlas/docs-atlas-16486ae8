@@ -1,0 +1,140 @@
+---
+title: "KaraokeLineText Composable API Reference"
+sidebarTitle: "KaraokeLineText"
+description: "API reference for KaraokeLineText — renders a single karaoke line with syllable-level fill animation, character bounce effects, translation, and phonetics."
+---
+
+`KaraokeLineText` renders a single `KaraokeLine` with full syllable-level karaoke animation. As playback progresses, a horizontal fill gradient sweeps across the text, each character bounces and swells as it is sung, and phonetic annotations float above their syllables. The composable handles multi-row line wrapping, LTR/RTL detection, accompaniment sub-lines with enter/exit animations, and optional translation text. While it is used internally by [`KaraokeLyricsView`](/api/karaoke-lyrics-view), you can embed it standalone wherever you need to display a single animated karaoke line.
+
+## Function Signature
+
+```kotlin
+@Composable
+fun KaraokeLineText(
+    line: KaraokeLine,
+    currentTimeProvider: () -> Int,
+    modifier: Modifier = Modifier,
+    normalLineTextStyle: TextStyle = LocalTextStyle.current,
+    accompanimentLineTextStyle: TextStyle = LocalTextStyle.current,
+    phoneticTextStyle: TextStyle = LocalTextStyle.current,
+    activeColor: Color = Color.White,
+    blendMode: BlendMode = BlendMode.SrcOver,
+    showDebugRectangles: Boolean = false,
+    showTranslation: Boolean = true,
+    showPhonetic: Boolean = true,
+    precalculatedLayouts: List<SyllableLayout>? = null,
+    isDuoView: Boolean = false,
+    textMeasurer: TextMeasurer = rememberTextMeasurer()
+)
+```
+
+## Parameters
+
+<ParamField query="line" type="KaraokeLine" required>
+  The karaoke line data to render. This can be a `KaraokeLine.MainKaraokeLine` (which may also carry a list of `accompanimentLines`) or a `KaraokeLine.AccompanimentKaraokeLine`. The composable reads the line's `syllables`, `alignment`, `translation`, `phonetic`, `start`, and `end` fields to drive all animations and layout.
+</ParamField>
+
+<ParamField query="currentTimeProvider" type="() -> Int" required>
+  A lambda returning the current playback position in **milliseconds**. The canvas redraws itself by reading this lambda on every frame; use a stable lambda reference (e.g. from `rememberUpdatedState`) to avoid triggering unnecessary recompositions.
+</ParamField>
+
+<ParamField query="modifier" type="Modifier" default="Modifier">
+  Modifier applied to the outer `Column` that wraps the canvas, translation text, and phonetic text. Use this to control width, padding, or alignment when embedding `KaraokeLineText` outside of `KaraokeLyricsView`.
+</ParamField>
+
+<ParamField query="normalLineTextStyle" type="TextStyle" default="LocalTextStyle.current">
+  Text style used for main vocal lines (`KaraokeLine.MainKaraokeLine`). This style drives text measurement and therefore directly affects the canvas size and glyph positions.
+</ParamField>
+
+<ParamField query="accompanimentLineTextStyle" type="TextStyle" default="LocalTextStyle.current">
+  Text style used for accompaniment / background-vocal lines (`KaraokeLine.AccompanimentKaraokeLine`). Should generally be smaller than `normalLineTextStyle` to visually subordinate these lines.
+</ParamField>
+
+<ParamField query="phoneticTextStyle" type="TextStyle" default="LocalTextStyle.current">
+  Text style for per-syllable phonetic annotations rendered above the main text on the canvas. Also used for the line-level `phonetic` string displayed below the canvas when `showPhonetic` is `true`.
+</ParamField>
+
+<ParamField query="activeColor" type="Color" default="Color.White">
+  The color of the text. The karaoke fill gradient transitions from a dimmed version of this color (alpha ≈ 0.2) to full `activeColor` as each syllable is sung. Translation text is drawn at `activeColor.copy(alpha = 0.4f)` and the line-level phonetic at `activeColor.copy(alpha = 0.6f)`.
+</ParamField>
+
+<ParamField query="blendMode" type="BlendMode" default="BlendMode.SrcOver">
+  Blend mode applied via `graphicsLayer` to the translation and phonetic `Text` composables, and passed through to the canvas drawing calls. Match this to the `blendMode` used by the parent [`LyricsLineItem`](/api/lyrics-line-item) for consistent compositing.
+</ParamField>
+
+<ParamField query="showDebugRectangles" type="Boolean" default="false">
+  When `true`, draws colored bounding rectangles around each rendered glyph on the canvas — green for simple-animation syllables, red for character-bounce-animation syllables. Intended for development only; do not ship with this enabled.
+</ParamField>
+
+<ParamField query="showTranslation" type="Boolean" default="true">
+  Whether to display the line's `translation` string (if non-null) below the canvas. The translation is rendered at `activeColor.copy(alpha = 0.4f)` and aligned to match the line's detected text direction.
+</ParamField>
+
+<ParamField query="showPhonetic" type="Boolean" default="true">
+  Controls two things: inline per-syllable phonetics drawn on the canvas above each syllable, and the line-level `phonetic` string rendered below the canvas. Set to `false` to suppress both.
+</ParamField>
+
+<ParamField query="precalculatedLayouts" type="List<SyllableLayout>?" default="null">
+  An optional pre-computed list of `SyllableLayout` objects for the line's syllables. When provided, the composable skips the text-measurement step on the composition thread, improving performance for long lyrics lists. `KaraokeLyricsView` pre-fills this from its background layout cache and passes it here automatically. When `null`, layouts are computed synchronously during composition.
+</ParamField>
+
+<ParamField query="isDuoView" type="Boolean" default="false">
+  Reserved flag indicating whether this line is being rendered inside a duet/duo view layout. Currently accepted by the composable signature for future use; no visual difference is applied in the current implementation.
+</ParamField>
+
+<ParamField query="textMeasurer" type="TextMeasurer" default="rememberTextMeasurer()">
+  The `TextMeasurer` used to measure syllable and phonetic glyphs. When using `KaraokeLineText` standalone, the default (`rememberTextMeasurer()`) is sufficient. When embedding multiple instances in a list, share a single measurer instance from the parent for better performance.
+</ParamField>
+
+## Usage Example
+
+```kotlin
+@Composable
+fun StandaloneKaraokeLineDemo(
+    line: KaraokeLine.MainKaraokeLine,
+    player: MediaPlayer
+) {
+    val textMeasurer = rememberTextMeasurer()
+
+    LyricsLineItem(
+        isFocused = true,
+        isRightAligned = false,
+        onLineClicked = { player.seekTo(line.start) },
+        onLinePressed = { },
+        blurRadius = { 0f },
+        blendMode = BlendMode.Plus
+    ) {
+        KaraokeLineText(
+            line = line,
+            currentTimeProvider = { player.currentPositionMs },
+            normalLineTextStyle = TextStyle(
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Bold,
+                textMotion = TextMotion.Animated
+            ),
+            accompanimentLineTextStyle = TextStyle(
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                textMotion = TextMotion.Animated
+            ),
+            phoneticTextStyle = TextStyle(
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Normal
+            ),
+            activeColor = Color.White,
+            blendMode = BlendMode.Plus,
+            showTranslation = true,
+            showPhonetic = true,
+            textMeasurer = textMeasurer
+        )
+    }
+}
+```
+
+<Note>
+  Text measurement is performed synchronously by default whenever `precalculatedLayouts` is `null`. In a long scrolling list this can cause jank on the first render of each item. Pass pre-computed `SyllableLayout` lists (as `KaraokeLyricsView` does internally) to avoid this.
+</Note>
+
+<Tip>
+  Accompaniment lines attached to a `MainKaraokeLine` are automatically rendered by `KaraokeLineText` — you do not need to render them separately. They animate in with a scale + fade + slide entrance and animate out with the corresponding exit when the current time exits their visibility window.
+</Tip>

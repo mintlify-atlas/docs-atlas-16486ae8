@@ -1,0 +1,158 @@
+---
+title: "KaraokeBreathingDots Composable API Reference"
+sidebarTitle: "KaraokeBreathingDots"
+description: "API reference for KaraokeBreathingDots — renders animated pulsing dots during instrumental intros and interludes, with configurable timing and appearance."
+---
+
+`KaraokeBreathingDots` renders a row of pulsing, animated dots that appear between lyric lines during instrumental interludes or before the first lyric line during a long intro. The dots breathe in and out to hint at the musical rhythm, fill in from left to right as the gap progresses, then smoothly exit just before the next line begins. [`KaraokeLyricsView`](/api/karaoke-lyrics-view) displays them automatically whenever a gap between consecutive lines exceeds 5 seconds; you can also use this composable standalone for custom layouts.
+
+---
+
+## KaraokeBreathingDotsDefaults
+
+`KaraokeBreathingDotsDefaults` is a `data class` that bundles all visual and timing configuration for the breathing dots animation. Pass an instance to either `KaraokeLyricsView` (via `breathingDotsDefaults`) or directly to `KaraokeBreathingDots` (via `defaults`).
+
+```kotlin
+data class KaraokeBreathingDotsDefaults(
+    val number: Int = 3,
+    val size: Dp = 16.dp,
+    val margin: Dp = 12.dp,
+    val enterDurationMs: Int = 3000,
+    val preExitStillDuration: Int = 200,
+    val preExitDipAndRiseDuration: Int = 3000,
+    val exitDurationMs: Int = 200,
+    val breathingDotsColor: Color = Color.White
+)
+```
+
+<ParamField query="number" type="Int" default="3">
+  The number of dots to render in a row. Each dot lights up sequentially during the **breathe** stage, with their individual activation spread evenly across the breathing duration.
+</ParamField>
+
+<ParamField query="size" type="Dp" default="16.dp">
+  The diameter of each individual dot circle. This value also determines the canvas height.
+</ParamField>
+
+<ParamField query="margin" type="Dp" default="12.dp">
+  The horizontal gap between adjacent dots. Together with `size` and `number`, this determines the total canvas width: `size × number + margin × (number − 1)`.
+</ParamField>
+
+<ParamField query="enterDurationMs" type="Int" default="3000">
+  Duration in milliseconds for the **enter** stage — the initial fade-in and scale-up from zero. If the total interlude is shorter than all animation stages combined, all durations are scaled down proportionally.
+</ParamField>
+
+<ParamField query="preExitStillDuration" type="Int" default="200">
+  Duration in milliseconds for the **still** stage immediately before the exit — the dots hold at full scale and full alpha before fading out.
+</ParamField>
+
+<ParamField query="preExitDipAndRiseDuration" type="Int" default="3000">
+  Duration in milliseconds for the **pre-exit dip** stage — a `cos`-based scale animation that causes the dots to dip down and rise back up, building anticipation before the lyrics resume.
+</ParamField>
+
+<ParamField query="exitDurationMs" type="Int" default="200">
+  Duration in milliseconds for the **exit** stage — the fade-out and scale-down at the end of the interlude. Short by default so the transition into the first lyric line feels snappy.
+</ParamField>
+
+<ParamField query="breathingDotsColor" type="Color" default="Color.White">
+  The base fill color of the dots. Individual dot alpha varies between `0.4` (dim) and `1.0` (fully lit) during the breathe stage; overall alpha is also modulated by the enter and exit animations.
+</ParamField>
+
+---
+
+## KaraokeBreathingDots Composable
+
+### Function Signature
+
+```kotlin
+@Composable
+fun KaraokeBreathingDots(
+    alignment: KaraokeAlignment,
+    startTimeMs: Int,
+    endTimeMs: Int,
+    currentTimeProvider: () -> Int,
+    modifier: Modifier = Modifier,
+    defaults: KaraokeBreathingDotsDefaults = KaraokeBreathingDotsDefaults()
+)
+```
+
+### Parameters
+
+<ParamField query="alignment" type="KaraokeAlignment" required>
+  The horizontal alignment of the dot row within its container. Use `KaraokeAlignment.Start` to left-align the dots (for LTR lines) and `KaraokeAlignment.End` to right-align them (for RTL lines or `End`-aligned karaoke lines). `KaraokeLyricsView` derives this automatically from the preceding or first lyric line.
+</ParamField>
+
+<ParamField query="startTimeMs" type="Int" required>
+  The start time of the interlude in **milliseconds** — typically the `end` time of the preceding lyric line, or `0` for an intro. The animation timeline is calculated relative to this value.
+</ParamField>
+
+<ParamField query="endTimeMs" type="Int" required>
+  The end time of the interlude in **milliseconds** — typically the `start` time of the next lyric line. The exit animation is anchored to this value so the dots always finish fading out just as the next line begins.
+</ParamField>
+
+<ParamField query="currentTimeProvider" type="() -> Int" required>
+  A lambda returning the current playback position in **milliseconds**. The canvas reads this on every frame to determine which animation stage is active and what the current scale and alpha values should be.
+</ParamField>
+
+<ParamField query="modifier" type="Modifier" default="Modifier">
+  Modifier applied to the outer `Box` that contains the dot canvas. Use this to add additional padding or size constraints when embedding the composable outside of `KaraokeLyricsView`.
+</ParamField>
+
+<ParamField query="defaults" type="KaraokeBreathingDotsDefaults" default="KaraokeBreathingDotsDefaults()">
+  The visual and timing configuration for the dots. See [`KaraokeBreathingDotsDefaults`](#karaokebreathingdotsdefaults) above for all configurable fields.
+</ParamField>
+
+---
+
+## Animation Stages
+
+The breathing-dots animation is divided into five sequential stages. If the total interlude duration is shorter than the sum of all default durations, every stage duration is scaled down by the same factor so the full sequence still plays.
+
+| Stage | Condition | Behaviour |
+|---|---|---|
+| **1 — Enter** | `currentTime < enterEnd` | Alpha and scale ramp from `0` → `1` using `FastOutSlowInEasing` over `enterDurationMs`. Dots fade in and grow into view. |
+| **2 — Breathe** | `enterEnd ≤ currentTime < dipStart` | Alpha and scale stay at `1`. Scale oscillates via `cos` on a 3-second cycle, producing a gentle pulse. Each dot brightens in sequence across the breathing window. |
+| **3 — Pre-exit dip** | `dipStart ≤ currentTime < stillStart` | Scale dips with a full `cos` wave over `preExitDipAndRiseDuration`, creating a downward-then-upward motion that signals the approaching lyric. |
+| **4 — Still** | `stillStart ≤ currentTime < exitStart` | Alpha `1`, scale `1`. The dots hold perfectly still for `preExitStillDuration` ms, creating a moment of tension before exit. |
+| **5 — Exit** | `currentTime ≥ exitStart` | Alpha and scale fade from `1` → `0` using `FastOutSlowInEasing` over `exitDurationMs`. |
+
+<Note>
+  The dots also use a left-to-right reveal mask (a `DstIn` blend with a horizontal gradient) during the enter stage, so they appear to unveil progressively from the leading edge rather than simply fading in uniformly.
+</Note>
+
+---
+
+## Usage Example
+
+```kotlin
+// Standalone usage — display breathing dots for a 10-second interlude
+@Composable
+fun InterludeDots(player: MediaPlayer) {
+    AnimatedVisibility(visible = player.currentPositionMs in 30_000..40_000) {
+        KaraokeBreathingDots(
+            alignment = KaraokeAlignment.Start,
+            startTimeMs = 30_000,
+            endTimeMs = 40_000,
+            currentTimeProvider = { player.currentPositionMs },
+            modifier = Modifier.padding(vertical = 12.dp),
+            defaults = KaraokeBreathingDotsDefaults(
+                number = 3,
+                size = 16.dp,
+                margin = 12.dp,
+                enterDurationMs = 3000,
+                preExitStillDuration = 200,
+                preExitDipAndRiseDuration = 3000,
+                exitDurationMs = 200,
+                breathingDotsColor = Color.White
+            )
+        )
+    }
+}
+```
+
+<Tip>
+  When using `KaraokeLyricsView`, you do not need to add `KaraokeBreathingDots` manually — the parent composable handles dot visibility and timing automatically for any interlude longer than 5 seconds. Only use this composable standalone when building a fully custom lyrics layout.
+</Tip>
+
+<Warning>
+  Always wrap `KaraokeBreathingDots` in `AnimatedVisibility` (or an equivalent show/hide guard) when using it standalone. The composable does not hide itself when the current time falls outside the `startTimeMs`–`endTimeMs` window; it simply renders at zero alpha.
+</Warning>

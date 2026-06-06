@@ -1,0 +1,253 @@
+---
+title: "How Accompanist Lyrics UI Animations Work"
+sidebarTitle: "Animations"
+description: "Explore the three-layer animation system in Accompanist Lyrics UI: karaoke fill gradients, character-level bounce effects, and spring-physics list placement."
+---
+
+Accompanist Lyrics UI achieves its Apple Music-style polish through three distinct, independently operating animation layers. Layer 1 sweeps a luminous gradient across each syllable as it is sung. Layer 2 adds per-character bounce and swell effects for suitably long words. Layer 3 uses spring physics to smoothly move lyric lines into position as playback advances. Each layer is designed so it can degrade gracefully — a `SyncedLine` skips layers 1 and 2 entirely and only benefits from layer 3, while a fast-paced karaoke line uses a simplified version of layer 2.
+
+---
+
+## Layer 1 — Karaoke Fill Gradient
+
+The most visually prominent effect is the horizontal gradient that sweeps across a lyric line in real time, revealing the sung text in full white while leaving the unsung portion at 20% alpha.
+
+### How the gradient is computed
+
+Every rendered row of text is processed inside `createLineGradientBrush()` in `KaraokeLineText.kt`. The function:
+
+1. Determines the **current pixel position** of the karaoke cursor by calling `syllable.progress(currentTimeMs)` on the active syllable, then multiplying by that syllable's pixel width to get an exact sub-syllable position.
+2. Converts that position to a **normalised progress value** (0–1) across the row's total text width.
+3. Builds a `Brush.horizontalGradient` with a soft fade region of **100 pixels** centred on the cursor, blending from active white to inactive white.
+
+```kotlin
+// Active = full white, inactive = white at 20% alpha
+val activeColor   = Color.White
+val inactiveColor = Color.White.copy(alpha = 0.2f)
+val minFadeWidth  = 100f          // pixels
+
+// For LTR text:
+arrayOf(
+    0.0f to activeColor,
+    fadeStart.coerceIn(0f, 1f) to activeColor,
+    fadeEnd.coerceIn(0f, 1f)   to inactiveColor,
+    1.0f to inactiveColor
+)
+```
+
+### Canvas saveLayer + DstIn blend
+
+The gradient is not drawn on top of the text — it is used as an **alpha mask**. The drawing sequence per row is:
+
+<Steps>
+  <Step title="Open a layer">
+    `canvas.saveLayer(layerBounds, LayerPaint)` isolates the row into an offscreen buffer.
+  </Step>
+  <Step title="Draw the text">
+    All syllable glyphs are drawn into the offscreen buffer at full opacity using the configured `blendMode` (default `BlendMode.Plus` for the glow effect).
+  </Step>
+  <Step title="Apply the gradient mask">
+    `drawRect(brush = progressBrush, blendMode = BlendMode.DstIn)` uses the gradient as a destination-in mask. Pixels under the active (fully opaque white) region are kept; pixels under the inactive (20% alpha white) region become partially transparent.
+  </Step>
+  <Step title="Restore the layer">
+    The composited result is blended back into the main canvas.
+  </Step>
+</Steps>
+
+### RTL support
+
+When the syllable content is detected as right-to-left text, the gradient color-stop order is **reversed** — the active (white) region is placed at the end of the `horizontalGradient` instead of the start, so the sweep travels from right to left.
+
+---
+
+## Layer 2 — Character-Level Animations ("Awesome" Mode)
+
+For words that are held long enough to animate individual characters, the library applies three simultaneous easing-driven transforms per character. This is called "Awesome" mode internally.
+
+### Eligibility check
+
+`measureSyllablesAndDetermineAnimation()` in `LyricsLayoutCalculator.kt` computes the following before each word is laid out:
+
+```kotlin
+val perCharDuration = wordDuration.toFloat() / wordContent.length
+
+val useAwesomeAnimation =
+    perCharDuration > 200f      // each character lasts > 200 ms
+    && wordDuration >= 1000     // entire word lasts ≥ 1 000 ms
+    && !wordContent.shouldUseSimpleAnimation()  // not CJK / Arabic / Devanagari
+    && !isAccompanimentLine     // background vocals use simple mode only
+```
+
+If `useAwesomeAnimation` is `false`, the word falls back to **simple mode**: a small vertical float of up to 4 px using `CubicBezierEasing(0, 0, 0.2, 1)` over a fixed 700 ms window.
+
+### The three Newton-polynomial easings
+
+All three easing functions are constructed from `NewtonPolynomialInterpolationEasing`, which fits a polynomial through a set of `(x, y)` control points and evaluates it via Horner's method:
+
+<Accordion title="DipAndRise — vertical displacement">
+```kotlin
+fun DipAndRise(dip: Double = 0.5, rise: Double = 1.0) =
+    NewtonPolynomialInterpolationEasing(
+        0.0 to 0.0,
+        0.5 to -dip,   // character dips downward at mid-point
+        1.0 to rise    // then rises above the baseline
+    )
+```
+The character first moves **downward** (negative Y offset) as the syllable begins, then **rises** as it is fully sung. The amplitude scales with how much extra time the word has beyond the `200 ms × charCount` threshold, capped at a dip of 0.5 and a rise of 1.0.
+</Accordion>
+
+<Accordion title="Swell — scale pulse">
+```kotlin
+fun Swell(swell: Double = 0.1) =
+    NewtonPolynomialInterpolationEasing(
+        0.0 to 0.0,
+        0.5 to swell,  // briefly scales up at mid-point
+        1.0 to 0.0     // returns to normal size
+    )
+```
+Each character briefly **scales up** to `1 + swell` at the midpoint of its animation window, then returns to `1.0`. The swell factor is at most `0.1` (10% size increase), keeping the effect subtle. The scale pivot is the **horizontal centre of the whole word**, not the individual character, so all characters appear to swell outward from a common anchor.
+</Accordion>
+
+<Accordion title="Bounce — shadow blur pulse">
+```kotlin
+val Bounce = NewtonPolynomialInterpolationEasing(
+    0.0 to 0.0,
+    0.7 to 1.0,   // blur peaks at 70% of the animation
+    1.0 to 0.0
+)
+```
+A `Shadow` with `blurRadius = 10f × Bounce.transform(progress)` is applied to each character's `drawText` call, creating a light-burst or bloom effect that peaks just before the character's animation completes.
+</Accordion>
+
+### Character staggering
+
+Characters within a word are not animated simultaneously. The animation start time for character `i` out of `n` total characters is:
+
+```kotlin
+val charRatio = if (n > 1) i.toFloat() / (n - 1) else 0.5f
+val awesomeStartTime = earliestStart + (latestStart - earliestStart) * charRatio
+```
+
+where `earliestStart = word.first().start` and `latestStart = word.last().end - awesomeDuration`. This distributes character animations evenly across the word's timing window, creating a left-to-right (or right-to-left for RTL) wave of activity.
+
+### Simple mode (CJK / Arabic / Devanagari)
+
+Scripts that are detected as pure CJK, Arabic, or Devanagari skip the character-splitting logic and instead animate the whole syllable as a single unit. The syllable floats upward by at most 4 px over 700 ms using `CubicBezierEasing(0, 0, 0.2, 1)` — a fast-in, slow-out deceleration curve — giving a gentle pop-in without requiring per-glyph measurement of complex scripts.
+
+<Tip>
+Pass `showDebugRectangles = true` to `KaraokeLyricsView` to draw red bounding boxes (Awesome mode) or green bounding boxes (simple mode) around each syllable's measured bounds. This is invaluable for diagnosing layout issues with unusual fonts or scripts.
+</Tip>
+
+---
+
+## Layer 3 — Spring-Physics List Placement
+
+The `springPlacement` modifier makes the `LazyColumn` items animate to their new positions with spring physics whenever the auto-scroll moves the focused line.
+
+### How it works
+
+`SpringPlacementModifierNode` implements `ApproachLayoutModifierNode`, which gives it access to Compose's `LookaheadScope`. On every frame:
+
+1. It reads the **lookahead target position** — where the item *will* be once layout settles — using `lookaheadScopeCoordinates.localLookaheadPositionOf()`.
+2. It feeds that target into a `DeferredTargetAnimation<IntOffset>`.
+3. The animated offset is subtracted from the item's current layout position to produce a placement delta.
+
+```kotlin
+spring(dampingRatio = 0.95f, stiffness = stiffness)
+```
+
+The spring uses a fixed `dampingRatio` of **0.95** (lightly under-damped, just enough to feel alive without overshooting noticeably). The `stiffness` is dynamic:
+
+```kotlin
+val dynamicStiffness = (120f - distanceFromFocus * 20f).coerceAtLeast(20f)
+```
+
+| Distance from focused line | Stiffness |
+|:--------------------------:|:---------:|
+| 0 (currently focused) | 120 |
+| 1 | 100 |
+| 2 | 80 |
+| 3 | 60 |
+| 4 | 40 |
+| ≥ 5 | 20 |
+
+Lines near the focus snap quickly; lines far from the focus follow lazily, creating a natural depth-of-field sensation.
+
+### Manual vs programmatic scroll
+
+When the user scrolls manually, `isManualScrolling` is `true`. In this state the spring animation is replaced with `snap()`, which teleports items to their target position immediately. This prevents the spring from fighting the user's finger gesture.
+
+```kotlin
+if (isFirstFrame || isManualScrolling) snap()
+else spring(dampingRatio = 0.95f, stiffness = stiffness)
+```
+
+The `isFirstFrame` guard ensures items appear at their correct position on first composition without an animated entrance from `Offset.Zero`.
+
+---
+
+## Focus State & Blur
+
+The `lyricsFocusState` derivedState object tracks which lines are "active" at any given moment:
+
+```kotlin
+internal data class FocusState(
+    val firstIndex: Int,           // scroll target — the line to center in view
+    val allIndices: List<Int>,     // all active lines, including accompaniment anchors
+    val activeInterludeIndex: Int?,// index of the next line after an instrumental gap
+    val activeIntro: Boolean       // true when playback is before the first lyric line
+)
+```
+
+Non-focused lines are visually de-emphasised:
+
+- **Alpha**: 0.4 (set in `LyricsLineItem`)
+- **Scale**: 0.98 (set in `LyricsLineItem`)
+- **Blur**: `distanceFromFocus × blurDelta` radius, where `blurDelta` defaults to `3f`. A distance of 3 lines produces a 9-pixel Gaussian blur radius.
+
+Blur is disabled during manual scroll — `animateFloatAsState` targets `0f` whenever `listState.isScrollInProgress && !scrollInCode.value` — avoiding expensive blur compositing while the user is interacting.
+
+The `useBlurEffect` parameter on `KaraokeLyricsView` can disable the blur layer entirely for performance-constrained devices.
+
+---
+
+## Breathing Dots
+
+Breathing dots appear automatically in two situations:
+- **Intro**: when the first lyric line starts more than 5 000 ms into the track.
+- **Interlude**: when the gap between any two consecutive lines exceeds 5 000 ms.
+
+The dot animation is a five-stage timeline, all durations scaling proportionally if the available gap is shorter than the default total:
+
+<Steps>
+  <Step title="Enter (fade in)">
+    Dots fade in and scale up from 0 to 1 using `FastOutSlowInEasing` over `enterDurationMs` (default 3 000 ms). A left-to-right reveal gradient (`DstIn` mask) unveils the dots one by one.
+  </Step>
+  <Step title="Breathe (cosine pulse)">
+    Scale oscillates via `0.9 - 0.1 × cos(angle)` with a period of 3 000 ms, producing a gentle in-and-out breathing rhythm. Each dot lights up sequentially during this phase.
+  </Step>
+  <Step title="Pre-exit dip-and-rise">
+    Scale traces `0.8 + 0.2 × cos(progress × 2π)` over `preExitDipAndRiseDuration` (default 3 000 ms), creating a final flourish before the dots leave.
+  </Step>
+  <Step title="Still">
+    Dots hold at scale 1.0 for `preExitStillDuration` (default 200 ms), giving a clean moment of stillness before the exit.
+  </Step>
+  <Step title="Exit (fade out)">
+    Dots fade out and scale down to 0 using `FastOutSlowInEasing` over `exitDurationMs` (default 200 ms).
+  </Step>
+</Steps>
+
+The dot layout uses a `canvas.saveLayer` + `DstIn` gradient mask (matching the same pattern as the karaoke gradient) to produce the left-to-right reveal during the enter phase. Dot count, size, margin, and color are all configurable via `KaraokeBreathingDotsDefaults`.
+
+```kotlin
+KaraokeBreathingDotsDefaults(
+    number = 3,
+    size = 16.dp,
+    margin = 12.dp,
+    enterDurationMs = 3000,
+    preExitStillDuration = 200,
+    preExitDipAndRiseDuration = 3000,
+    exitDurationMs = 200,
+    breathingDotsColor = Color.White
+)
+```

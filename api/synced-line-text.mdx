@@ -1,0 +1,113 @@
+---
+title: "SyncedLineText Composable API Reference"
+sidebarTitle: "SyncedLineText"
+description: "API reference for SyncedLineText — renders a single time-synced (non-karaoke) lyric line with optional translation and automatic RTL detection."
+---
+
+`SyncedLineText` renders a single `SyncedLine` — a lyric line that carries word-level or line-level timing information but does **not** have individual syllable timestamps. Unlike [`KaraokeLineText`](/api/karaoke-line-text), there is no fill gradient or character animation; the entire line is displayed as a standard `Text` composable styled by the caller. It handles RTL text alignment and optionally shows a translation string at reduced opacity beneath the main content. [`KaraokeLyricsView`](/api/karaoke-lyrics-view) uses this composable for all `SyncedLine` items in the lyrics list, with RTL detection performed automatically via `isRtl()` on the line's `content`.
+
+## Function Signature
+
+```kotlin
+@Composable
+fun SyncedLineText(
+    line: SyncedLine,
+    isLineRtl: Boolean,
+    textStyle: TextStyle,
+    textColor: Color,
+    modifier: Modifier = Modifier,
+    showTranslation: Boolean = true
+)
+```
+
+## Parameters
+
+<ParamField query="line" type="SyncedLine" required>
+  The synced lyric line to display. `SyncedLine` contains a `content` string (the lyric text), an optional `translation` string, and timing fields (`start`, `end`). The `content` is rendered as the main lyric; `translation` is rendered beneath it when `showTranslation` is `true`.
+</ParamField>
+
+<ParamField query="isLineRtl" type="Boolean" required>
+  Determines horizontal alignment. When `true`, the `Column`, its `Text`, and the translation `Text` are all end-aligned, and `TextAlign.End` is applied so that long lines wrap correctly. When `false`, start alignment is used. Pass the result of calling `isRtl()` on `line.content` to auto-detect direction — this is exactly what `KaraokeLyricsView` does internally.
+</ParamField>
+
+<ParamField query="textStyle" type="TextStyle" required>
+  The `TextStyle` applied to the main lyric `Text`. This is a required parameter; there is no ambient fallback. When called from `KaraokeLyricsView` the `normalLineTextStyle` with an additional `lineHeight = 1.2.em` override is passed here.
+</ParamField>
+
+<ParamField query="textColor" type="Color" required>
+  The color of the main lyric `Text`. This is a required parameter with no default. The translation text (if shown) is rendered at `textColor.copy(alpha = 0.6f)` to visually subordinate it to the main content.
+</ParamField>
+
+<ParamField query="modifier" type="Modifier" default="Modifier">
+  Modifier applied to the outer `Column`. The column also internally applies `fillMaxWidth()` and `padding(vertical = 12.dp, horizontal = 16.dp)`, so the modifier you provide is combined on top of those.
+</ParamField>
+
+<ParamField query="showTranslation" type="Boolean" default="true">
+  Whether to render the `line.translation` string (if non-null) below the main lyric text. The translation is shown at `textColor.copy(alpha = 0.6f)` with the same alignment as the main text. Pass `false` to suppress translations globally (e.g. when the user has disabled them in settings).
+</ParamField>
+
+## RTL Auto-Detection
+
+When used inside `KaraokeLyricsView`, the `isLineRtl` value is derived automatically:
+
+```kotlin
+// Inside KaraokeLyricsView
+val isLineRtl = remember(line.content) { line.content.isRtl() }
+```
+
+`isRtl()` is a utility function in the library that inspects the Unicode bidirectional properties of the string's characters. You should do the same when embedding `SyncedLineText` in a custom layout.
+
+## Usage Example
+
+<CodeGroup>
+
+```kotlin Standalone
+@Composable
+fun SingleSyncedLine(
+    line: SyncedLine,
+    isFocused: Boolean,
+    player: MediaPlayer
+) {
+    val isRtl = remember(line.content) { line.content.isRtl() }
+
+    LyricsLineItem(
+        isFocused = isFocused,
+        isRightAligned = isRtl,
+        onLineClicked = { player.seekTo(line.start) },
+        onLinePressed = { },
+        blurRadius = { 0f }
+    ) {
+        SyncedLineText(
+            line = line,
+            isLineRtl = isRtl,
+            textStyle = TextStyle(
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 1.2.em
+            ),
+            textColor = Color.White,
+            showTranslation = true
+        )
+    }
+}
+```
+
+```kotlin With Translation Hidden
+SyncedLineText(
+    line = line,
+    isLineRtl = false,
+    textStyle = TextStyle(fontSize = 28.sp, fontWeight = FontWeight.SemiBold),
+    textColor = Color.White,
+    showTranslation = false
+)
+```
+
+</CodeGroup>
+
+<Note>
+  `SyncedLineText` is intentionally minimal — it renders static `Text` composables with no animation driven by playback position. All focus-based effects (scale, alpha, blur) are applied by the parent [`LyricsLineItem`](/api/lyrics-line-item) wrapper, not by `SyncedLineText` itself.
+</Note>
+
+<Tip>
+  If you are building a custom lyrics layout that mixes `KaraokeLine` and `SyncedLine` items, always check the type at the call site and route to the appropriate composable — `KaraokeLineText` for karaoke lines and `SyncedLineText` for synced lines. `KaraokeLyricsView` handles this routing internally via a `when (line)` branch.
+</Tip>

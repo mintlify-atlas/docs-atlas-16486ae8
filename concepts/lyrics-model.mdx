@@ -1,0 +1,178 @@
+---
+title: "Understanding the Accompanist Lyrics Data Model"
+sidebarTitle: "Lyrics Model"
+description: "Learn how SyncedLyrics, KaraokeLine, SyncedLine, and KaraokeSyllable form the data model that drives Accompanist Lyrics UI rendering."
+---
+
+Accompanist Lyrics UI is a pure rendering library — it does not parse lyric files itself. Instead, it consumes data objects produced by the companion `lyrics-core` library. The central types you will work with are `SyncedLyrics` (the root container), `KaraokeLine` (a line with per-syllable timing), `SyncedLine` (a line with only line-level timing), and `KaraokeSyllable` (a single timed text fragment within a karaoke line). Understanding how these types relate to one another is the key to using `KaraokeLyricsView` effectively.
+
+## Type Hierarchy
+
+The following table summarises the full object hierarchy, from the root container down to individual syllables:
+
+| Level | Type | Contains |
+|-------|------|----------|
+| Root | `SyncedLyrics` | `lines: List<ISyncedLine>` |
+| Line (karaoke) | `KaraokeLine.MainKaraokeLine` | `syllables`, `accompanimentLines`, alignment, translation, phonetic |
+| Line (background) | `KaraokeLine.AccompanimentKaraokeLine` | `syllables`, alignment, translation, phonetic |
+| Line (synced) | `SyncedLine` | `content`, `translation` |
+| Syllable | `KaraokeSyllable` | `content`, `start`, `end`, `phonetic`, `progress()` |
+
+A compact diagram of the primary path:
+
+```
+SyncedLyrics
+ └── lines: List<ISyncedLine>
+      └── KaraokeLine.MainKaraokeLine
+           ├── syllables: List<KaraokeSyllable>
+           │    └── KaraokeSyllable(content, start, end, phonetic)
+           ├── accompanimentLines: List<KaraokeLine.AccompanimentKaraokeLine>?
+           │    └── KaraokeLine.AccompanimentKaraokeLine
+           │         └── syllables: List<KaraokeSyllable>
+           ├── alignment: KaraokeAlignment
+           ├── translation: String?
+           └── phonetic: String?
+```
+
+---
+
+## SyncedLyrics
+
+`SyncedLyrics` is the root object passed to `KaraokeLyricsView`. It holds a flat, ordered list of all lyric lines:
+
+```kotlin
+data class SyncedLyrics(
+    val lines: List<ISyncedLine>
+)
+```
+
+The list is expected to be sorted by `start` time. The renderer iterates over it to determine which lines are active, which are in the future, and where interludes fall. Both `KaraokeLine` and `SyncedLine` implement `ISyncedLine` and can coexist in the same `lines` list — a track could have some karaoke-timed sections and some simple synced-line sections.
+
+---
+
+## ISyncedLine
+
+`ISyncedLine` is the common interface for all line types. It provides the time window during which a line is considered active:
+
+```kotlin
+interface ISyncedLine {
+    val start: Int  // milliseconds
+    val end: Int    // milliseconds
+}
+```
+
+Both values are in **milliseconds** from the start of the track. The renderer uses `start` and `end` to drive the `lyricsFocusState` — determining which lines are focused, which should show breathing dots, and how far ahead to scroll.
+
+---
+
+## KaraokeLine
+
+`KaraokeLine` is the richer of the two line types. It is a sealed class with two concrete subtypes.
+
+### KaraokeLine.MainKaraokeLine
+
+The primary vocal line for a given time window. This is the type rendered by `KaraokeLineText` with the full suite of animations.
+
+```kotlin
+data class MainKaraokeLine(
+    override val start: Int,
+    override val end: Int,
+    val syllables: List<KaraokeSyllable>,
+    val alignment: KaraokeAlignment,
+    val translation: String?,
+    val phonetic: String?,
+    val accompanimentLines: List<AccompanimentKaraokeLine>?
+) : KaraokeLine()
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `syllables` | `List<KaraokeSyllable>` | Ordered timed text fragments that make up the line |
+| `alignment` | `KaraokeAlignment` | Determines horizontal placement (`Start`, `End`, `Unspecified`) |
+| `translation` | `String?` | Optional translated text, rendered below the line at 40% alpha |
+| `phonetic` | `String?` | Optional line-level phonetic annotation (e.g., romanisation) rendered below the line at 60% alpha |
+| `accompanimentLines` | `List<AccompanimentKaraokeLine>?` | Background / harmony vocals paired with this line |
+
+### KaraokeLine.AccompanimentKaraokeLine
+
+A background or harmony vocal line, always associated with a `MainKaraokeLine`. It appears at a smaller text size and reduced alpha (active: 0.6, inactive: 0.2) so it does not compete visually with the lead vocal.
+
+```kotlin
+data class AccompanimentKaraokeLine(
+    override val start: Int,
+    override val end: Int,
+    val syllables: List<KaraokeSyllable>,
+    val alignment: KaraokeAlignment,
+    val translation: String?,
+    val phonetic: String?
+) : KaraokeLine()
+```
+
+The renderer matches each `AccompanimentKaraokeLine` in the `lines` list to its nearest `MainKaraokeLine` by time proximity, then renders it above or below the main line depending on whether its `start` precedes the main line's `start`.
+
+---
+
+## KaraokeSyllable
+
+`KaraokeSyllable` is the smallest timed unit in the model. Each syllable holds a string fragment (often a single word or part of a word) and the exact millisecond window during which it should be highlighted.
+
+```kotlin
+data class KaraokeSyllable(
+    val content: String,
+    val start: Int,      // ms
+    val end: Int,        // ms
+    val phonetic: String?
+) {
+    fun progress(timeMs: Int): Float =
+        ((timeMs - start).toFloat() / (end - start)).coerceIn(0f, 1f)
+}
+```
+
+The `progress(timeMs)` helper is used by `createLineGradientBrush` inside `KaraokeLineText` to compute exactly how far the karaoke fill gradient should have advanced across the current syllable. It returns `0.0` at the syllable's start and `1.0` at its end.
+
+<Tip>
+Syllables often include trailing whitespace as part of their `content` (e.g., `"golden "`). The renderer strips trailing whitespace from line-ending syllables so the gradient brush doesn't extend into invisible padding.
+</Tip>
+
+---
+
+## SyncedLine
+
+`SyncedLine` is the simpler alternative to `KaraokeLine`. It has a single string for the entire line and no syllable-level timing. It is rendered by `SyncedLineText` with a vertical float animation instead of a karaoke gradient.
+
+```kotlin
+data class SyncedLine(
+    override val start: Int,
+    override val end: Int,
+    val content: String,
+    val translation: String?
+) : ISyncedLine
+```
+
+`SyncedLine` is the output type for LRC-format lyrics, which only carry line-level timestamps. RTL detection is done automatically from `content` for alignment purposes.
+
+---
+
+## KaraokeAlignment
+
+`KaraokeAlignment` is an enum that controls the horizontal anchor point of a line within the view:
+
+```kotlin
+enum class KaraokeAlignment {
+    Start,
+    End,
+    Unspecified
+}
+```
+
+| Value | Meaning |
+|-------|---------|
+| `Start` | Line is anchored to the leading edge (left in LTR, right in RTL) |
+| `End` | Line is anchored to the trailing edge (right in LTR, left in RTL) |
+| `Unspecified` | Treated the same as `Start` by the renderer |
+
+<Note>
+`KaraokeAlignment.End` is used for the **second voice in duet tracks**. In a standard left-to-right layout the lead vocal sits on the left (`Start`) and the response vocal sits on the right (`End`), replicating the Apple Music duet presentation. The renderer automatically inverts this for RTL scripts — an `End`-aligned Arabic line still anchors to the correct visual right edge.
+</Note>
+
+RTL text detection (`isRtl()`) is applied independently to the syllable content and can flip the visual side of a line even when `alignment` is `Start` or `Unspecified`, ensuring Arabic, Hebrew, and similar scripts always render correctly regardless of the alignment metadata in the source file.

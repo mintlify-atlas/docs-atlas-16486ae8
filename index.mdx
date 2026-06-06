@@ -1,20 +1,82 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "Accompanist Lyrics UI"
+sidebarTitle: "Home"
+description: "Apple Music-style karaoke and synced lyrics for Compose Multiplatform. Syllable-level animations, multi-voice duet support, and breathing dot interludes."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+Accompanist Lyrics UI is a Kotlin Multiplatform library that brings production-quality karaoke lyrics rendering to Android and JVM (Desktop) apps built with Jetpack Compose. Drop in `KaraokeLyricsView` and get syllable-level fill animations, character-level bounce effects, multi-voice duet lines, and animated breathing dots — all inspired by Apple Music.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Add the dependency and render your first lyrics view in minutes.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/karaoke-lyrics-view">
+    Full parameter docs for every public composable and utility.
+  </Card>
+  <Card title="Karaoke Guide" icon="microphone" href="/guides/karaoke-lyrics">
+    Learn how to feed karaoke timing data and tune animations.
+  </Card>
+  <Card title="Core Concepts" icon="book" href="/concepts/lyrics-model">
+    Understand the lyrics model, lyric formats, and animation system.
+  </Card>
+</CardGroup>
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+## Why Accompanist Lyrics UI?
+
+Most lyrics libraries render plain scrolling text. Accompanist Lyrics UI goes further — it renders each syllable with a smooth karaoke fill gradient, animates individual characters with physics-inspired bounce and swell effects, and handles the full complexity of real-world lyrics files including multi-voice duets, RTL text, phonetics, and translations.
+
+<CardGroup cols={3}>
+  <Card title="Karaoke Fill" icon="wand-magic-sparkles">
+    Syllable-level gradient that sweeps left-to-right (or right-to-left for RTL) in sync with playback.
+  </Card>
+  <Card title="Multi-Voice" icon="users">
+    Main vocals and accompaniment lines rendered together with animated show/hide transitions.
+  </Card>
+  <Card title="Breathing Dots" icon="circle-dot">
+    Pulsing dots automatically appear during instrumental intros and interludes.
+  </Card>
+  <Card title="Spring Physics" icon="spring">
+    List items reorder with spring-based placement animations via Compose's `LookaheadScope`.
+  </Card>
+  <Card title="RTL Support" icon="language">
+    Arabic and other right-to-left scripts are detected automatically and rendered correctly.
+  </Card>
+  <Card title="Multiplatform" icon="mobile">
+    Targets Android (API 29+) and JVM Desktop via Compose Multiplatform.
+  </Card>
+</CardGroup>
+
+## Get Started
+
+<Steps>
+  <Step title="Add the dependency">
+    Add `lyrics-ui` to your `build.gradle.kts`:
+    ```kotlin build.gradle.kts
+    dependencies {
+        implementation("com.mocharealm.accompanist:lyrics-ui:1.0.18")
+    }
+    ```
+  </Step>
+  <Step title="Parse your lyrics">
+    Use the companion `lyrics-core` library to parse TTML or LRC files into a `SyncedLyrics` object.
+  </Step>
+  <Step title="Render lyrics">
+    ```kotlin
+    val listState = rememberLazyListState()
+    KaraokeLyricsView(
+        listState = listState,
+        lyrics = syncedLyrics,
+        currentPosition = { player.currentPosition.toInt() },
+        onLineClicked = { line -> player.seekTo(line.start.toLong()) },
+        onLinePressed = { line -> /* show share sheet */ }
+    )
+    ```
+  </Step>
+  <Step title="Explore & customize">
+    Read the [Theming & Styling guide](/guides/theming-styling) to adjust text styles, blend modes, blur effects, and breathing dot appearance.
+  </Step>
+</Steps>
+
+<Note>
+  Accompanist Lyrics UI depends on [`lyrics-core`](https://github.com/6xingyv/Accompanist-Lyrics) for the data model. Make sure to include both dependencies in your project.
+</Note>

@@ -1,0 +1,183 @@
+---
+title: "Showing Translations and Phonetic Text"
+sidebarTitle: "Translations & Phonetics"
+description: "Add translations and phonetic ruby text (e.g., pinyin or romaji) to karaoke and synced lyrics lines in Accompanist Lyrics UI."
+---
+
+Accompanist Lyrics UI natively supports two layers of supplementary text: **per-line translations** that appear below the main lyric text, and **per-syllable phonetics** (ruby text) that appear above each syllable for transliteration. Both features are toggled independently with Boolean flags on `KaraokeLyricsView` and both degrade gracefully when no data is present.
+
+## Line-Level Translation
+
+Every line type exposes an optional `translation` field:
+
+- `KaraokeLine` has `translation: String?`
+- `SyncedLine` has `translation: String?`
+
+When a translation string is present and `showTranslation = true` on `KaraokeLyricsView`, the translation is rendered immediately below the main lyric text in the same `Column`. For `KaraokeLine`, the translation passes through the `graphicsLayer` blendMode so it composites correctly with the glow effect:
+
+```kotlin
+// Inside KaraokeLineText — simplified
+if (showTranslation) {
+    line.translation?.let { translation ->
+        Text(
+            text = translation,
+            color = activeColor.copy(alpha = 0.4f),
+            modifier = Modifier.graphicsLayer {
+                this.blendMode = blendMode
+            },
+            textAlign = translationTextAlign // matches the line's Start/End alignment
+        )
+    }
+}
+```
+
+For `SyncedLine`, the translation renders at `0.6f` alpha:
+
+```kotlin
+// Inside SyncedLineText — simplified
+if (showTranslation) {
+    line.translation?.let {
+        Text(
+            text = it,
+            color = textColor.copy(alpha = 0.6f),
+            textAlign = if (isLineRtl) TextAlign.End else TextAlign.Start
+        )
+    }
+}
+```
+
+The text alignment of the translation always mirrors the parent line — `TextAlign.End` for right-aligned or RTL lines, `TextAlign.Start` for everything else.
+
+Toggle translations globally on `KaraokeLyricsView`:
+
+```kotlin
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = lyrics,
+    currentPosition = currentPositionProvider,
+    onLineClicked = { onSeekTo(it.start) },
+    onLinePressed = { /* ... */ },
+    showTranslation = true  // set to false to hide all translations
+)
+```
+
+## Syllable-Level Phonetics
+
+Phonetic text provides a transliteration guide rendered above each syllable — commonly used for:
+
+- **Pinyin** above Chinese characters
+- **Romaji** above Japanese kanji
+- **Hangul** above Chinese characters in Korean contexts
+
+Phonetics are attached at the syllable level. Each `KaraokeSyllable` carries an optional `phonetic: String?` field:
+
+```kotlin
+KaraokeSyllable(
+    content = "你",
+    phonetic = "nǐ",
+    start = 1000,
+    end = 1400
+)
+```
+
+`KaraokeLine` also has a line-level `phonetic: String?` field for a fallback phonetic transcription of the whole line. When present and `showPhonetic = true`, it renders below the main lyrics and translation text using `phoneticTextStyle` at `0.6f` alpha:
+
+```kotlin
+// Inside KaraokeLineText — simplified
+if (showPhonetic) {
+    line.phonetic?.let { phonetic ->
+        Text(
+            text = phonetic,
+            style = phoneticTextStyle,
+            color = activeColor.copy(alpha = 0.6f),
+            modifier = Modifier.graphicsLayer { this.blendMode = blendMode },
+            textAlign = translationTextAlign
+        )
+    }
+}
+```
+
+### Per-Syllable Animation
+
+Syllable-level phonetics participate in the character animation system. During the syllable's active window, the phonetic text dips and rises in sync with its parent characters using the same `DipAndRise` easing curve and `Swell` scale effect. The phonetic is drawn at a position directly above the syllable:
+
+```kotlin
+// Inside drawRowText (Canvas drawing phase) — simplified
+val phoneticX = syllableLayout.position.x
+val phoneticY = syllableLayout.position.y - phoneticLayout.size.height + 4.dp.toPx() + floatOffset
+
+withTransform({ scale(scale = scale, pivot = syllableLayout.wordPivot) }) {
+    drawText(
+        textLayoutResult = phoneticLayout,
+        color = phoneticDrawColor, // activeColor at 0.4f alpha
+        topLeft = Offset(phoneticX, phoneticY)
+    )
+}
+```
+
+This means the phonetic bounces visually with the character it annotates — creating a unified, connected feeling rather than static overlay text.
+
+## Configuring Phonetic Text Style
+
+The `phoneticTextStyle` parameter on `KaraokeLyricsView` controls the typeface of all phonetic text. Its default is derived from `normalLineTextStyle` at a smaller size and normal weight:
+
+```kotlin
+// Default value (computed from normalLineTextStyle)
+phoneticTextStyle = normalLineTextStyle.copy(
+    fontSize = 13.sp,
+    fontWeight = FontWeight.Normal
+)
+```
+
+Customize it to match your app's typography:
+
+```kotlin
+KaraokeLyricsView(
+    listState = listState,
+    lyrics = lyrics,
+    currentPosition = currentPositionProvider,
+    onLineClicked = { onSeekTo(it.start) },
+    onLinePressed = { /* ... */ },
+    normalLineTextStyle = TextStyle(
+        fontSize = 34.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = myFontFamily,
+        textMotion = TextMotion.Animated
+    ),
+    phoneticTextStyle = TextStyle(
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Normal,
+        fontFamily = myFontFamily,
+        letterSpacing = 0.05.em
+    )
+)
+```
+
+## Phonetic Height Accounting
+
+When phonetics are enabled, the layout engine automatically reserves extra vertical space above each row so that phonetic text from one line does not overlap the content of the line above it. This is controlled inside `calculateStaticLineLayout` by the `phoneticHeight` parameter:
+
+```kotlin
+val phoneticHeight = remember(phoneticTextStyle) {
+    textMeasurer.measure("M", phoneticTextStyle).size.height.toFloat()
+}
+
+val finalLineLayouts = remember(
+    wrappedLines, availableWidthPx, lineHeight, isLineRtl, isRightAligned, showPhonetic
+) {
+    calculateStaticLineLayout(
+        wrappedLines = wrappedLines,
+        isLineRightAligned = isRightAligned,
+        canvasWidth = availableWidthPx,
+        lineHeight = lineHeight,
+        phoneticHeight = if (showPhonetic) phoneticHeight else 0f,  // only add space when enabled
+        isRtl = isLineRtl
+    )
+}
+```
+
+When `showPhonetic = false`, `phoneticHeight` is passed as `0f`, so rows are packed at their natural line height without any extra gap.
+
+<Tip>
+Phonetics can carry any single-line transliteration string — romaji for Japanese, pinyin for Mandarin Chinese, Jyutping for Cantonese, or even IPA for pronunciation guides in educational apps. The field is a plain `String`, so the format is entirely up to your data pipeline.
+</Tip>

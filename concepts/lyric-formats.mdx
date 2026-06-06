@@ -1,0 +1,136 @@
+---
+title: "Supported Lyric File Formats"
+sidebarTitle: "Lyric Formats"
+description: "Accompanist Lyrics UI supports Apple Music TTML, LRC, and the native LYS format through the lyrics-core parsing library."
+---
+
+Accompanist Lyrics UI does not read lyric files directly. All parsing is handled by the companion `lyrics-core` library (dependency: `com.mocharealm.accompanist:lyrics-core`), which converts each supported format into a `SyncedLyrics` object. That object is then passed unchanged to `KaraokeLyricsView`. This clean separation means the rendering layer never needs to know which file format was originally used — it only ever sees the shared data model.
+
+---
+
+## Apple Music TTML
+
+TTML (Timed Text Markup Language) as used by Apple Music is the primary format supported by `lyrics-core` and the one that unlocks all rendering features of the library. The root `<tt>` element carries the `itunes:timing="Word"` attribute, which signals that each `<span>` inside a `<p>` block has its own `begin` and `end` timestamps — this is what enables syllable-level karaoke animations.
+
+Background / harmony vocals are wrapped in a `<span ttm:role="x-bg">` container inside the same `<p>` element as the lead vocal. The parser maps these to `KaraokeLine.AccompanimentKaraokeLine` instances.
+
+### Example (golden-hour.ttml)
+
+The following is an excerpt from the `golden-hour.ttml` sample asset, showing the first three lyric paragraphs. The third paragraph (`L3`) demonstrates the `x-bg` background vocal feature:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"
+    xmlns:itunes="http://music.apple.com/lyric-ttml-internal"
+    xmlns:ttm="http://www.w3.org/ns/ttml#metadata"
+    itunes:timing="Word">
+  <head>
+    <metadata>
+      <ttm:agent type="person" xml:id="v1" />
+    </metadata>
+  </head>
+  <body dur="02:52.830">
+    <div begin="00:00.010" end="02:52.830">
+
+      <!-- L1: simple word-timed line -->
+      <p begin="00:00.10" end="00:00.670" ttm:agent="v1" itunes:key="L1">
+        <span begin="00:00.010" end="00:00.120">Dun-dun</span>
+        <span begin="00:00.120" end="00:00.240">, </span>
+        <span begin="00:00.240" end="00:00.670">dun-dun-dun </span>
+      </p>
+
+      <!-- L2: second line, same pattern -->
+      <p begin="00:01.730" end="00:03.090" ttm:agent="v1" itunes:key="L2">
+        <span begin="00:02.230" end="00:02.350">Dun-dun</span>
+        <span begin="00:02.350" end="00:02.470">, </span>
+        <span begin="00:02.470" end="00:02.690">dun-dun-dun </span>
+      </p>
+
+      <!-- L3: lead vocal + background vocal (x-bg) -->
+      <p begin="00:04.110" end="00:06.030" ttm:agent="v1" itunes:key="L3">
+        <span begin="00:04.110" end="00:04.230">It </span>
+        <span begin="00:04.230" end="00:04.410">was </span>
+        <span begin="00:04.410" end="00:04.620">just </span>
+        <span begin="00:04.620" end="00:04.710">two </span>
+        <span begin="00:04.710" end="00:05.100">lovers </span>
+        <span ttm:role="x-bg">
+          <span begin="00:04.00" end="00:04.490">Mm</span>
+          <span begin="00:04.490" end="00:04.610">, </span>
+          <span begin="00:04.610" end="00:06.030">ooh</span>
+        </span>
+      </p>
+
+    </div>
+  </body>
+</tt>
+```
+
+**Key attributes to know:**
+
+| Attribute | Where | Meaning |
+|-----------|-------|---------|
+| `itunes:timing="Word"` | `<tt>` | Declares that each `<span>` has word/syllable-level timestamps |
+| `begin` / `end` on `<span>` | `<span>` | Start and end time of each syllable in `mm:ss.xxx` format |
+| `ttm:role="x-bg"` | outer `<span>` | Marks the enclosed spans as a background/harmony vocal line |
+| `itunes:key` | `<p>` | Unique stable identifier for each line (used for scrolling anchors) |
+
+---
+
+## LRC
+
+LRC is a plain-text format that attaches a single `[mm:ss.xx]` timestamp to each line of lyrics. There is no syllable-level timing, so `lyrics-core` maps each LRC entry to a `SyncedLine` rather than a `KaraokeLine`. The rendering falls back to the simpler `SyncedLineText` composable, which uses a vertical float animation instead of the karaoke gradient.
+
+```lrc
+[00:04.11]It was just two lovers
+[00:06.09]Sittin' in the car, listening to Blonde,
+[00:07.98]fallin' for each other
+[00:09.84]Pink and orange skies,
+[00:10.95]feelin' super childish,
+```
+
+LRC is the most widely available lyric format and is supported for convenience, but it does not enable any of the syllable-level or character-level animation features.
+
+---
+
+## LYS
+
+LYS is the native format of the Accompanist ecosystem. It encodes syllable-level timing compactly on a single line per lyric phrase, with each word followed by its `(start_ms, duration_ms)` pair in parentheses. Voice/agent identifiers appear at the start of each line (e.g., `[4]` for the main voice, `[7]` for the background voice, `[5]` for a second lead voice).
+
+### Example (me.lys)
+
+```
+[4]I (0,214)promise (214,345)that (559,185)you'll (744,154)never (898,334)find (1232,202)another (1434,470)like (1904,363)me(2267,658)
+[4]I (3476,185)know (3661,150)that (3811,161)I'm (3972,184)a (4156,155)handful, (4311,672)baby, (4983,672)uh(5655,401)
+[4]I (6113,213)know (6326,237)I (6563,165)never (6728,293)think (7021,339)before (7360,649)I (8009,113)jump(8122,563)
+[7]And (11407,134)there's (11541,178)a (11719,125)lot (11844,100)of (11944,245)cool (12189,309)chicks (12498,399)out (12897,220)there(13117,758)
+```
+
+Each token is `word(start_ms, duration_ms)`. The parser reconstructs `start` and `end` in milliseconds for each `KaraokeSyllable`. The `[7]` voice tag produces an `AccompanimentKaraokeLine` that is paired with the nearest main-voice line.
+
+---
+
+## Choosing a Format
+
+<Note>
+All format parsing is provided by the `lyrics-core` library. See the repository at [https://github.com/6xingyv/Accompanist-Lyrics](https://github.com/6xingyv/Accompanist-Lyrics) for the full parser API and additional details on each format.
+</Note>
+
+Use this table to pick the right format for your use case:
+
+| Format | Syllable-level timing | Multi-voice / duet | Translations | Notes |
+|--------|:---------------------:|:------------------:|:------------:|-------|
+| **TTML** | ✓ | ✓ | External file | Apple Music standard; broadest ecosystem support |
+| **LRC** | ✗ | ✗ | Separate `.lrc` file | Widely available; simplest to author |
+| **LYS** | ✓ | ✓ | Built-in | Native Accompanist format; compact single-file representation |
+
+<CardGroup cols={3}>
+  <Card title="TTML" icon="music">
+    Best choice when sourcing lyrics from Apple Music or when maximum animation quality is needed. The `x-bg` mechanism makes duet handling straightforward.
+  </Card>
+  <Card title="LRC" icon="align-left">
+    Good fallback when only line-level timing is available. Renders cleanly with the `SyncedLineText` composable and still supports the focus, blur, and spring-placement animations.
+  </Card>
+  <Card title="LYS" icon="file-code">
+    Ideal for first-party content or tools in the Accompanist ecosystem. Encodes all features — syllable timing, multi-voice, phonetics — in a single compact file.
+  </Card>
+</CardGroup>

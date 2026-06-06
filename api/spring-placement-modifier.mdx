@@ -1,0 +1,126 @@
+---
+title: "springPlacement Modifier Reference"
+sidebarTitle: "springPlacement"
+description: "Reference for the springPlacement Modifier extension — applies spring-physics animations to list item placement using Compose's LookaheadScope API."
+---
+
+`springPlacement` is a custom `Modifier` extension that animates a composable to its target position using spring physics, without interfering with Compose's layout measurement pass. It is used inside `KaraokeLyricsView` to give each lyric row a fluid, physically motivated motion as the active line scrolls and surrounding rows reposition themselves.
+
+## Function signature
+
+```kotlin
+fun Modifier.springPlacement(
+    lookaheadScope: LookaheadScope,
+    itemKey: Any,
+    isManualScrolling: Boolean,
+    stiffness: Float
+): Modifier
+```
+
+## Parameters
+
+<ParamField path="lookaheadScope" type="LookaheadScope" required>
+  The enclosing `LookaheadScope` provided by the `LookaheadScope { }` block in `KaraokeLyricsView`. `springPlacement` uses this scope to query the item's *lookahead* (future) position — the position Compose has already computed for the next frame — so it can interpolate the current visual position toward that target without re-triggering layout.
+</ParamField>
+
+<ParamField path="itemKey" type="Any" required>
+  A unique, stable key for this item — typically the lyric line's index or ID. When `itemKey` changes, the `DeferredTargetAnimation` is reset and the `isFirstFrame` flag is set back to `true`, causing the next frame to snap immediately rather than animate from the old position.
+</ParamField>
+
+<ParamField path="isManualScrolling" type="Boolean" required>
+  Pass `true` while the user is actively dragging the scroll container. When `true`, the modifier uses a `snap()` animation spec instead of `spring()`, so the item moves with the user's finger without any lag or overshoot that would fight the gesture.
+</ParamField>
+
+<ParamField path="stiffness" type="Float" required>
+  The stiffness constant of the spring. Higher values produce a snappier, less springy motion; lower values produce a looser, more elastic feel.
+
+  `KaraokeLyricsView` uses differentiated stiffness values depending on a row's distance from the focused (active) line:
+
+  | Distance from active line | Suggested stiffness |
+  |--------------------------|---------------------|
+  | Active / adjacent row | `120f` |
+  | Distant rows | Down to `20f` |
+
+  This creates a wave-like ripple effect where nearby rows react quickly while farther rows trail behind.
+</ParamField>
+
+## Behaviour
+
+The modifier is implemented as an `ApproachLayoutModifierNode` backed by a `DeferredTargetAnimation<IntOffset>`. On each frame:
+
+1. `isPlacementApproachInProgress` computes the lookahead target position and feeds it to the animation. Returns `true` (telling Compose to keep animating) while `offsetAnimation.isIdle == false`.
+2. `approachMeasure` places the composable at the **animated** offset rather than the lookahead offset, creating the smooth visual interpolation.
+
+### First-frame snap
+
+On the very first frame after composition (or after `itemKey` changes), the modifier uses `snap()` regardless of `isManualScrolling`. This prevents the jarring effect of an item appearing to fly in from `Offset.Zero` when it is first added to the layout.
+
+```kotlin
+// Internally the spec selection looks like this:
+val spec = if (isFirstFrame || isManualScrolling) snap()
+           else spring(dampingRatio = 0.95f, stiffness = stiffness)
+```
+
+### Spring parameters
+
+| Parameter | Value |
+|-----------|-------|
+| `dampingRatio` | `0.95f` (highly damped — minimal overshoot) |
+| `stiffness` | Variable per row (see table above) |
+
+The high damping ratio keeps the motion crisp and prevents visible oscillation, which is important when many rows are repositioning simultaneously during a track seek.
+
+## Implementation classes
+
+The public `springPlacement` function is a thin wrapper over two internal types:
+
+```kotlin
+// ModifierNodeElement carries the configuration and creates/updates the node
+data class SpringPlacementNodeElement(
+    val lookaheadScope: LookaheadScope,
+    val itemKey: Any,
+    val isManualScrolling: Boolean,
+    val stiffness: Float
+) : ModifierNodeElement<SpringPlacementModifierNode>()
+
+// The actual node that runs the animation
+class SpringPlacementModifierNode(
+    var lookaheadScope: LookaheadScope,
+    var itemKey: Any,
+    var isManualScrolling: Boolean,
+    var stiffness: Float
+) : ApproachLayoutModifierNode, Modifier.Node()
+```
+
+When Compose recomposes with updated parameters (e.g., a new `stiffness` value as the active line changes), `SpringPlacementNodeElement.update()` calls `node.updateState()`, which updates the parameters in place without recreating the node or resetting the animation — unless `itemKey` has changed.
+
+## Usage example
+
+```kotlin
+LookaheadScope {
+    LazyColumn {
+        itemsIndexed(lyricLines, key = { _, line -> line.id }) { index, line ->
+            val distanceFromActive = abs(index - activeLine)
+            val stiffness = (120f - distanceFromActive * 10f).coerceAtLeast(20f)
+
+            LyricsLineItem(
+                line = line,
+                modifier = Modifier.springPlacement(
+                    lookaheadScope = this@LookaheadScope,
+                    itemKey = line.id,
+                    isManualScrolling = isManualScrolling,
+                    stiffness = stiffness
+                )
+            )
+        }
+    }
+}
+```
+
+<Warning>
+  `springPlacement` requires that the modified composable is a **direct or indirect child** of a `LookaheadScope { }` block. Applying it outside a `LookaheadScope` will cause a runtime crash because `lookaheadScopeCoordinates` is unavailable without the scope. Always pair `springPlacement` with a wrapping `LookaheadScope`.
+</Warning>
+
+<Note>
+  `ApproachLayoutModifierNode` and `DeferredTargetAnimation` are marked `@ExperimentalAnimatableApi` in Compose. The library applies the corresponding opt-in annotation internally, but if you reference `SpringPlacementModifierNode` directly in your own code you will need to add `@OptIn(ExperimentalAnimatableApi::class)` to your call site.
+</Note>

@@ -1,0 +1,179 @@
+---
+title: "KaraokeLyricsView Composable API Reference"
+sidebarTitle: "KaraokeLyricsView"
+description: "Full parameter reference for KaraokeLyricsView — the main composable that renders scrolling karaoke and synced lyrics with syllable animations and auto-scroll."
+---
+
+`KaraokeLyricsView` is the top-level composable for the Accompanist Lyrics UI library. It renders a scrollable, animated lyrics view that supports both syllable-timed karaoke lines and simpler line-synced lyrics. The component automatically scrolls to the currently active line, applies blur and scale effects to inactive lines, shows breathing-dot animations during instrumental interludes and intros, and handles both LTR and RTL text direction. Pass a `LazyListState` created with `rememberLazyListState()` so you can observe or programmatically control the scroll position from outside the composable.
+
+## Function Signature
+
+```kotlin
+@Composable
+fun KaraokeLyricsView(
+    listState: LazyListState,
+    lyrics: SyncedLyrics,
+    currentPosition: () -> Int,
+    onLineClicked: (ISyncedLine) -> Unit,
+    onLinePressed: (ISyncedLine) -> Unit,
+    modifier: Modifier = Modifier,
+    normalLineTextStyle: TextStyle = LocalTextStyle.current.copy(
+        fontSize = 34.sp,
+        fontWeight = FontWeight.Bold,
+        textMotion = TextMotion.Animated,
+    ),
+    accompanimentLineTextStyle: TextStyle = LocalTextStyle.current.copy(
+        fontSize = 20.sp,
+        fontWeight = FontWeight.Bold,
+        textMotion = TextMotion.Animated,
+    ),
+    textColor: Color = Color.White,
+    breathingDotsDefaults: KaraokeBreathingDotsDefaults = KaraokeBreathingDotsDefaults(),
+    phoneticTextStyle: TextStyle = normalLineTextStyle.copy(
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Normal,
+    ),
+    blendMode: BlendMode = BlendMode.Plus,
+    useBlurEffect: Boolean = true,
+    showTranslation: Boolean = true,
+    showPhonetic: Boolean = true,
+    offset: Dp = 32.dp,
+    keepAliveZone: Dp = 100.dp,
+    blurDelta: Float = 3f,
+    showDebugRectangles: Boolean = false
+)
+```
+
+## Parameters
+
+<ParamField query="listState" type="LazyListState" required>
+  The scroll state for the internal `LazyColumn`. Create with `rememberLazyListState()` in the calling composable and hoist it if you need to observe or control the scroll position externally. `KaraokeLyricsView` uses this state to auto-scroll to the active line as playback progresses.
+</ParamField>
+
+<ParamField query="lyrics" type="SyncedLyrics" required>
+  The lyrics data to display. A `SyncedLyrics` object contains a list of `ISyncedLine` items — each of which is either a `KaraokeLine` (syllable-timed) or a `SyncedLine` (line-timed). The composable re-measures all karaoke layout caches when this value changes.
+</ParamField>
+
+<ParamField query="currentPosition" type="() -> Int" required>
+  A lambda that returns the current playback position in **milliseconds**. The composable reads this value on every frame to determine which line is active, which interlude should show breathing dots, and how far to auto-scroll. Wrap your player's position in `rememberUpdatedState` or pass it directly as a lambda to avoid unnecessary recompositions.
+</ParamField>
+
+<ParamField query="onLineClicked" type="(ISyncedLine) -> Unit" required>
+  Callback invoked when the user taps a lyric line. The tapped `ISyncedLine` is passed as the argument. Typically used to seek playback to the line's start time (`line.start`).
+</ParamField>
+
+<ParamField query="onLinePressed" type="(ISyncedLine) -> Unit" required>
+  Callback invoked when the user long-presses a lyric line. The pressed `ISyncedLine` is passed as the argument. Typically used to present a share sheet or context menu.
+</ParamField>
+
+<ParamField query="modifier" type="Modifier" default="Modifier">
+  Modifier applied to the outermost `Box` container. Use this to set size, padding, background, or any other standard Compose layout modifier.
+</ParamField>
+
+<ParamField query="normalLineTextStyle" type="TextStyle" default="LocalTextStyle.current.copy(fontSize = 34.sp, fontWeight = FontWeight.Bold, textMotion = TextMotion.Animated)">
+  Text style applied to main vocal lyric lines. The default uses 34 sp bold text with `TextMotion.Animated` to enable smooth glyph-level animations. This style is also used as the base from which `phoneticTextStyle` is derived.
+</ParamField>
+
+<ParamField query="accompanimentLineTextStyle" type="TextStyle" default="LocalTextStyle.current.copy(fontSize = 20.sp, fontWeight = FontWeight.Bold, textMotion = TextMotion.Animated)">
+  Text style applied to accompaniment / background-vocal lines (`KaraokeLine.AccompanimentKaraokeLine`). Defaults to 20 sp bold with `TextMotion.Animated` — slightly smaller than the main vocal style to visually subordinate these lines.
+</ParamField>
+
+<ParamField query="textColor" type="Color" default="Color.White">
+  Primary text color used for all lyric lines, breathing dots, and translation text. The active (sung) portion of a karaoke line is drawn at full opacity, while inactive portions and translations are drawn at reduced alpha derived from this color.
+</ParamField>
+
+<ParamField query="breathingDotsDefaults" type="KaraokeBreathingDotsDefaults" default="KaraokeBreathingDotsDefaults()">
+  Configuration object for the breathing-dot animation shown during instrumental intros (first line starts after 5 s) and interludes (gap between consecutive lines exceeds 5 s). See [`KaraokeBreathingDotsDefaults`](/api/karaoke-breathing-dots) for all configurable fields including dot count, size, margin, and animation durations.
+</ParamField>
+
+<ParamField query="phoneticTextStyle" type="TextStyle" default="normalLineTextStyle.copy(fontSize = 13.sp, fontWeight = FontWeight.Normal)">
+  Text style for inline phonetic annotations rendered above individual syllables. Derived from `normalLineTextStyle` by default; override to change font family, size, or weight independently of the main line style.
+</ParamField>
+
+<ParamField query="blendMode" type="BlendMode" default="BlendMode.Plus">
+  Blend mode used when compositing lyric text onto the background. `BlendMode.Plus` creates a luminous, glowing appearance well-suited to dark backgrounds. Set to `BlendMode.SrcOver` for standard non-additive rendering on lighter backgrounds.
+</ParamField>
+
+<ParamField query="useBlurEffect" type="Boolean" default="true">
+  When `true`, lines that are not currently active are blurred in proportion to their distance from the focused line (controlled by `blurDelta`). Set to `false` to disable all blur effects, for example on lower-end devices or when accessibility requirements demand it.
+</ParamField>
+
+<ParamField query="showTranslation" type="Boolean" default="true">
+  Whether to render the translation string (if present on a line) beneath the main lyric text. Pass `false` to hide translations globally.
+</ParamField>
+
+<ParamField query="showPhonetic" type="Boolean" default="true">
+  Whether to render phonetic annotations — both the inline per-syllable phonetics drawn on the canvas and the line-level phonetic string beneath the line. Pass `false` to hide all phonetics globally.
+</ParamField>
+
+<ParamField query="offset" type="Dp" default="32.dp">
+  Vertical padding added at the very start and end of the lazy list via `contentPadding`. This ensures the first and last lyric lines are not flush against the edges of the viewport.
+</ParamField>
+
+<ParamField query="keepAliveZone" type="Dp" default="100.dp">
+  Extra vertical space (in addition to `offset`) that is kept visible around the active line when auto-scrolling. A larger value keeps more context lines visible above the focused line. This value also expands the list's measured height so that items near the scroll position are not clipped.
+</ParamField>
+
+<ParamField query="blurDelta" type="Float" default="3f">
+  The amount of blur (in pixels) applied per line of distance from the currently focused line when `useBlurEffect` is `true`. For example, the line immediately before or after the active one receives `1 × blurDelta` blur radius, two lines away receives `2 × blurDelta`, and so on.
+</ParamField>
+
+<ParamField query="showDebugRectangles" type="Boolean" default="false">
+  When `true`, draws colored bounding rectangles around each glyph and syllable on the lyrics canvas — green for simple syllables, red for character-animated glyphs. Intended for development and layout debugging only; keep this `false` in production builds.
+</ParamField>
+
+## Usage Example
+
+```kotlin
+@Composable
+fun LyricsScreen(
+    lyrics: SyncedLyrics,
+    player: MediaPlayer
+) {
+    val listState = rememberLazyListState()
+
+    KaraokeLyricsView(
+        listState = listState,
+        lyrics = lyrics,
+        currentPosition = { player.currentPositionMs },
+        onLineClicked = { line -> player.seekTo(line.start) },
+        onLinePressed = { line -> showShareSheet(line) },
+        modifier = Modifier.fillMaxSize(),
+        normalLineTextStyle = TextStyle(
+            fontSize = 34.sp,
+            fontWeight = FontWeight.Bold,
+            textMotion = TextMotion.Animated
+        ),
+        accompanimentLineTextStyle = TextStyle(
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            textMotion = TextMotion.Animated
+        ),
+        textColor = Color.White,
+        blendMode = BlendMode.Plus,
+        useBlurEffect = true,
+        showTranslation = true,
+        showPhonetic = true,
+        offset = 32.dp,
+        keepAliveZone = 100.dp,
+        blurDelta = 3f,
+        breathingDotsDefaults = KaraokeBreathingDotsDefaults(
+            number = 3,
+            size = 16.dp,
+            breathingDotsColor = Color.White
+        )
+    )
+}
+```
+
+<Note>
+  `KaraokeLyricsView` pre-calculates all syllable layout data on a background coroutine (`Dispatchers.Default`) whenever `lyrics`, `normalLineTextStyle`, `accompanimentLineTextStyle`, or `phoneticTextStyle` changes. This means the first frame after a lyrics change may render without pre-computed layouts; subsequent frames will use the cache automatically.
+</Note>
+
+<Tip>
+  For the glow effect to look correct, wrap `KaraokeLyricsView` in a container that has `CompositingStrategy.Offscreen` set on its `graphicsLayer`, or ensure the background behind the lyrics is dark. `BlendMode.Plus` adds light, so it only produces a visible glow on non-white backgrounds.
+</Tip>
+
+<Warning>
+  `useBlurEffect = true` relies on `BlurEffect` from Compose's graphics layer API, which requires API level 31+ on Android. On older Android versions the blur is silently ignored, but no crash will occur.
+</Warning>
