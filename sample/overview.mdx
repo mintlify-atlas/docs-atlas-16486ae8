@@ -4,7 +4,7 @@ sidebarTitle: "Overview"
 description: "Explore the Accompanist sample app — a full-featured music player demonstrating karaoke lyrics, flowing light backgrounds, share sheets, and adaptive layouts."
 ---
 
-The Accompanist sample app is a complete music player that showcases every major capability of the `lyrics-ui` library. It pairs a `KaraokeLyricsView` with real-time ExoPlayer playback, an animated album-art background, a social sharing flow, and a fully adaptive layout that works on phones, tablets, and the desktop JVM target — giving you a battle-tested reference for your own integration.
+The Accompanist sample app is a complete music player that showcases every major capability of the `lyrics-ui` library. It pairs a `KaraokeLyricsView` with real-time ExoPlayer playback, an animated album-art background, a social sharing flow, and a fully adaptive layout that works on phones and tablets — giving you a battle-tested reference for your own integration.
 
 ## What's Included
 
@@ -67,13 +67,15 @@ The following tracks are bundled under `sample/src/androidMain/assets/` and are 
     ```
   </Step>
   <Step title="Run the desktop JVM target">
-    The sample also ships a desktop entry point (`MainKt`). Run it with:
+    The sample ships a minimal desktop entry point (`MainKt`) that renders a hardcoded TTML lyrics string using `KaraokeLyricsView` — useful for quickly previewing lyrics rendering on desktop without Android hardware. Run it with:
 
     ```bash
     ./gradlew :sample:run
     ```
 
-    Audio playback on desktop uses the same Media3 abstraction; lyrics rendering is identical to Android.
+    <Note>
+      The desktop entry point is a standalone lyrics-rendering preview. It does not include the full player, media playback, or share-sheet features — those are Android-only and live in `androidMain`.
+    </Note>
   </Step>
 </Steps>
 

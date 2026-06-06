@@ -62,13 +62,14 @@ fun PlayerScreen(playerViewModel: PlayerViewModel) {
         { animatedPositionState.longValue.toInt() }
     }
 
-    val isPlaying by remember { derivedStateOf { viewModel.playbackState.isPlaying } }
+    val uiState = playerViewModel.uiState.collectAsState()
+    val isPlaying by remember { derivedStateOf { uiState.value.playbackState.isPlaying } }
 
     // 3. A frame loop that updates the position state every vsync
     LaunchedEffect(isPlaying) {
         if (isPlaying) {
             while (true) {
-                val playbackState = playerViewModel.playbackState
+                val playbackState = uiState.value.playbackState
                 val elapsed = System.currentTimeMillis() - playbackState.lastUpdateTime
                 val newPosition = (playbackState.position + elapsed)
                     .coerceAtMost(playbackState.duration)
@@ -82,7 +83,7 @@ fun PlayerScreen(playerViewModel: PlayerViewModel) {
                 awaitFrame() // suspend until the next vsync frame
             }
         } else {
-            animatedPositionState.longValue = playerViewModel.playbackState.position
+            animatedPositionState.longValue = uiState.value.playbackState.position
         }
     }
 

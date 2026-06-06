@@ -1,7 +1,7 @@
 ---
-title: "WrappedLine and RowRenderData Reference"
+title: "WrappedLine & RowRenderData | Accompanist Lyrics UI"
 sidebarTitle: "WrappedLine"
-description: "Reference for WrappedLine and RowRenderData — the intermediate and final layout data structures produced by the lyrics layout calculator pipeline."
+description: "API reference for WrappedLine and RowRenderData — the intermediate and final layout data structures from the Accompanist Lyrics UI calculator pipeline."
 ---
 
 `WrappedLine` and `RowRenderData` represent the intermediate and final outputs of the [layout calculator pipeline](/api/lyrics-layout-calculator). `WrappedLine` is the output of the line-breaking stage — syllables grouped into rows but not yet positioned on the canvas. `RowRenderData` is the fully resolved output — syllables with pixel coordinates, plus per-row bounding boxes and timing metadata ready for the drawing layer.

@@ -144,5 +144,5 @@ val textStyle = remember(line is KaraokeLine.AccompanimentKaraokeLine) {
 The accompaniment line is also rendered at a reduced active alpha (`0.6f`) and inactive alpha (`0.2f`) compared to the main line, making the main voice the clear focal point even when both lines are visible simultaneously.
 
 <Note>
-The accompaniment-to-main anchor mapping is computed automatically by `KaraokeLyricsView` based on timestamp proximity. For each `AccompanimentKaraokeLine` in the flat `lyrics.lines` list, the library finds the nearest main line by comparing `line.start` to all non-accompaniment line start times — choosing the closest one whether it comes before or after. You do not need to supply explicit anchor indices in your data model.
+The accompaniment-to-main anchor mapping is computed automatically by `KaraokeLyricsView` based on timestamp proximity. For each `AccompanimentKaraokeLine` in the flat `lyrics.lines` list, the library finds the nearest main line by locating the closest non-accompaniment line by index (the one immediately before and the one immediately after), then choosing whichever has the smaller absolute difference between its `start` time and the accompaniment line's `start` time. You do not need to supply explicit anchor indices in your data model.
 </Note>

@@ -1,5 +1,5 @@
 ---
-title: "Installing Accompanist Lyrics UI in Your Project"
+title: "Install Accompanist Lyrics UI in Your Android Project"
 sidebarTitle: "Installation"
 description: "Add Accompanist Lyrics UI to your Android or Compose Multiplatform project. Covers Gradle setup, version catalog, and minimum SDK requirements."
 ---
@@ -12,13 +12,13 @@ Before adding the dependency, confirm your project meets the following minimum r
 
 | Requirement | Minimum Version |
 |---|---|
-| Kotlin | 2.x |
-| Compose Multiplatform | 1.x |
+| Kotlin | 2.3.10 |
+| Compose Multiplatform | 1.10.2 |
 | Android `minSdk` | 29 (API 29, Android 10) |
 | JVM target | 21 |
 
 <Warning>
-  The Android target requires **minSdk 29** because the blur effect applied to inactive lines relies on `RenderEffect` APIs introduced in Android 12 (API 31) with a graceful fallback path that still requires API 29 baseline rendering behaviour. Setting `minSdk` below 29 will cause a build-time manifest merge failure.
+  The Android target requires **minSdk 29**. Note that the blur effect applied to inactive lines relies on `RenderEffect` APIs introduced in Android 12 (API 31). On devices running API 29 or API 30 the blur will not be displayed, but the rest of the lyrics view will function normally. You can disable the blur entirely by passing `useBlurEffect = false`. Setting `minSdk` below 29 will cause a build-time manifest merge failure.
 </Warning>
 
 ## Adding Dependencies

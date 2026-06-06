@@ -1,7 +1,7 @@
 ---
-title: "Supported Lyric File Formats"
+title: "Supported Lyric File Formats in Accompanist: TTML, LRC, LYS"
 sidebarTitle: "Lyric Formats"
-description: "Accompanist Lyrics UI supports Apple Music TTML, LRC, and the native LYS format through the lyrics-core parsing library."
+description: "Accompanist Lyrics UI accepts Apple Music TTML, LRC, and the native LYS format via the lyrics-core library, enabling full karaoke rendering."
 ---
 
 Accompanist Lyrics UI does not read lyric files directly. All parsing is handled by the companion `lyrics-core` library (dependency: `com.mocharealm.accompanist:lyrics-core`), which converts each supported format into a `SyncedLyrics` object. That object is then passed unchanged to `KaraokeLyricsView`. This clean separation means the rendering layer never needs to know which file format was originally used — it only ever sees the shared data model.

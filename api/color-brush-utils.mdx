@@ -1,7 +1,7 @@
 ---
-title: "Color and Brush Utility Functions Reference"
+title: "Color and Brush Utilities | Accompanist Lyrics UI API"
 sidebarTitle: "Color & Brush Utils"
-description: "Reference for Color.copyHsl() and Brush.easedHorizontalGradient() — utility extensions for HSL color manipulation and eased gradient creation in Accompanist Lyrics UI."
+description: "API reference for Color.copyHsl() and Brush.easedHorizontalGradient(): HSL color channel overriding and eased gradient creation in Accompanist Lyrics UI."
 ---
 
 The library includes two utility extension functions for color and gradient work: `Color.copyHsl()` for non-destructive HSL channel editing, and `Brush.Companion.easedHorizontalGradient()` for generating perceptually smooth horizontal gradients. Both are used internally to produce the highlight colors and fade masks that give the Apple Music-style lyric renderer its look, and both are publicly available for use in custom theming.
@@ -57,14 +57,14 @@ Color (RGBA) → toHsl() → [h, s, l]
 ### Examples
 
 ```kotlin
-// Make a color 20 % lighter
-val lighter = brandColor.copyHsl(lightness = (brandColor.toHsl()[2] + 0.2f).coerceAtMost(1f))
+// Make a color 20 % lighter (lightness 0.0–1.0, so +0.2 moves toward white)
+val lighter = brandColor.copyHsl(lightness = 0.7f)
 
 // Desaturate to a neutral gray (preserves lightness)
 val gray = brandColor.copyHsl(saturation = 0f)
 
-// Shift hue by 30 degrees (warm → cooler tint)
-val shifted = brandColor.copyHsl(hue = (currentHue + 30f) % 360f)
+// Shift hue to 210 degrees (a cool blue tint)
+val shifted = brandColor.copyHsl(hue = 210f)
 
 // Reduce opacity while keeping color
 val faded = brandColor.copyHsl(alpha = 0.4f)

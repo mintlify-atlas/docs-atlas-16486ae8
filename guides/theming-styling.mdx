@@ -75,14 +75,18 @@ Alpha levels used internally:
 
 ## Blend Modes
 
-The `blendMode` parameter controls how each lyrics line composites against its background layer. The default `BlendMode.Plus` adds the text color to the underlying pixels, which creates a glowing, luminous effect when the background is dark.
+The `blendMode` parameter on `KaraokeLyricsView` controls how each lyrics line composites against its background layer. The default `BlendMode.Plus` adds the text color to the underlying pixels, which creates a glowing, luminous effect when the background is dark.
 
 ```kotlin
 KaraokeLyricsView(
     // ...
-    blendMode = BlendMode.Plus  // default — additive blending, creates a glow on dark backgrounds
+    blendMode = BlendMode.Plus  // KaraokeLyricsView default — additive blending, creates a glow on dark backgrounds
 )
 ```
+
+<Note>
+`KaraokeLyricsView` defaults to `BlendMode.Plus`, but the lower-level `KaraokeLineText` composable has its own `blendMode` parameter that defaults to `BlendMode.SrcOver`. When you use `KaraokeLyricsView` directly (which is the normal path), `KaraokeLyricsView` passes its own `blendMode` value down to `KaraokeLineText`, so only the `KaraokeLyricsView` default is relevant in practice. The `KaraokeLineText` default only applies if you instantiate `KaraokeLineText` in isolation without specifying a blend mode.
+</Note>
 
 `BlendMode.Plus` requires the parent composable to use `CompositingStrategy.Offscreen` so that the text is first rendered into an isolated layer before being composited. Without this, the additive blend applies against the wrong background and produces incorrect results. Apply it to the modifier of the composable wrapping `KaraokeLyricsView`:
 
@@ -142,10 +146,13 @@ During instrumental interludes and song introductions longer than 5 seconds, `Ka
 
 ```kotlin
 data class KaraokeBreathingDotsDefaults(
-    val number: Int = 3,               // number of dots
-    val size: Dp = 16.dp,              // diameter of each dot
-    val margin: Dp = 12.dp,            // gap between dots
-    val enterDurationMs: Int = 3000,   // fade-in animation duration
+    val number: Int = 3,                        // number of dots
+    val size: Dp = 16.dp,                       // diameter of each dot
+    val margin: Dp = 12.dp,                     // gap between dots
+    val enterDurationMs: Int = 3000,            // fade-in animation duration
+    val preExitStillDuration: Int = 200,        // hold-still phase before exit
+    val preExitDipAndRiseDuration: Int = 3000,  // dip-and-rise wind-down phase
+    val exitDurationMs: Int = 200,              // fade-out animation duration
     val breathingDotsColor: Color = Color.White
 )
 ```

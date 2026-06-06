@@ -1,7 +1,7 @@
 ---
-title: "KaraokeBreathingDots Composable API Reference"
+title: "KaraokeBreathingDots: Animated Dots Composable API Reference"
 sidebarTitle: "KaraokeBreathingDots"
-description: "API reference for KaraokeBreathingDots — renders animated pulsing dots during instrumental intros and interludes, with configurable timing and appearance."
+description: "API reference for KaraokeBreathingDots — animated pulsing dots for instrumental intros and interludes, with configurable timing and appearance."
 ---
 
 `KaraokeBreathingDots` renders a row of pulsing, animated dots that appear between lyric lines during instrumental interludes or before the first lyric line during a long intro. The dots breathe in and out to hint at the musical rhythm, fill in from left to right as the gap progresses, then smoothly exit just before the next line begins. [`KaraokeLyricsView`](/api/karaoke-lyrics-view) displays them automatically whenever a gap between consecutive lines exceeds 5 seconds; you can also use this composable standalone for custom layouts.
@@ -109,7 +109,7 @@ The breathing-dots animation is divided into five sequential stages. If the tota
 
 | Stage | Condition | Behaviour |
 |---|---|---|
-| **1 — Enter** | `currentTime < enterEnd` | Alpha and scale ramp from `0` → `1` using `FastOutSlowInEasing` over `enterDurationMs`. Dots fade in and grow into view. |
+| **1 — Enter** | `currentTime < enterEnd` | Alpha ramps from `0` → `1` using `FastOutSlowInEasing` over `enterDurationMs`. Scale is set to `alpha × 0.8`, so it ramps from `0` → `0.8`. Dots fade in and grow into view, transitioning smoothly into the breathe stage which starts at scale `0.8`. |
 | **2 — Breathe** | `enterEnd ≤ currentTime < dipStart` | Alpha and scale stay at `1`. Scale oscillates via `cos` on a 3-second cycle, producing a gentle pulse. Each dot brightens in sequence across the breathing window. |
 | **3 — Pre-exit dip** | `dipStart ≤ currentTime < stillStart` | Scale dips with a full `cos` wave over `preExitDipAndRiseDuration`, creating a downward-then-upward motion that signals the approaching lyric. |
 | **4 — Still** | `stillStart ≤ currentTime < exitStart` | Alpha `1`, scale `1`. The dots hold perfectly still for `preExitStillDuration` ms, creating a moment of tension before exit. |

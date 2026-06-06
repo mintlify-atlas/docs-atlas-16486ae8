@@ -1,7 +1,7 @@
 ---
-title: "Lyrics Layout Calculator Functions Reference"
+title: "Lyrics Layout Calculator | Accompanist Lyrics UI API"
 sidebarTitle: "Layout Calculator"
-description: "Reference for the layout calculation functions: measureSyllablesAndDetermineAnimation, calculateBalancedLines, calculateStaticLineLayout, and calculateRowRenderData."
+description: "API reference for measureSyllablesAndDetermineAnimation, calculateBalancedLines, calculateStaticLineLayout, calculateRowRenderData, and groupIntoWords."
 ---
 
 The layout calculator functions form the pipeline that transforms raw `KaraokeSyllable` data into the fully positioned, animation-ready [`SyllableLayout`](/api/syllable-layout) objects that the drawing layer consumes. Each function in the pipeline is pure and stateless — they operate on immutable lists and return new lists, making them safe to call from within Compose's `remember` / `LaunchedEffect` blocks.

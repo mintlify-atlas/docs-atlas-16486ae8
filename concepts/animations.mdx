@@ -1,7 +1,7 @@
 ---
-title: "How Accompanist Lyrics UI Animations Work"
+title: "Accompanist Lyrics UI Animation System: Three Layers"
 sidebarTitle: "Animations"
-description: "Explore the three-layer animation system in Accompanist Lyrics UI: karaoke fill gradients, character-level bounce effects, and spring-physics list placement."
+description: "Explore how Accompanist Lyrics UI animates lyrics with karaoke fill gradients, per-character bounce effects, and spring-physics list placement."
 ---
 
 Accompanist Lyrics UI achieves its Apple Music-style polish through three distinct, independently operating animation layers. Layer 1 sweeps a luminous gradient across each syllable as it is sung. Layer 2 adds per-character bounce and swell effects for suitably long words. Layer 3 uses spring physics to smoothly move lyric lines into position as playback advances. Each layer is designed so it can degrade gracefully — a `SyncedLine` skips layers 1 and 2 entirely and only benefits from layer 3, while a fast-paced karaoke line uses a simplified version of layer 2.
@@ -159,7 +159,7 @@ spring(dampingRatio = 0.95f, stiffness = stiffness)
 The spring uses a fixed `dampingRatio` of **0.95** (lightly under-damped, just enough to feel alive without overshooting noticeably). The `stiffness` is dynamic:
 
 ```kotlin
-val dynamicStiffness = (120f - distanceFromFocus * 20f).coerceAtLeast(20f)
+val dynamicStiffness = (120f - distanceWeightState.value * 20f).coerceAtLeast(20f)
 ```
 
 | Distance from focused line | Stiffness |
@@ -221,10 +221,10 @@ The dot animation is a five-stage timeline, all durations scaling proportionally
 
 <Steps>
   <Step title="Enter (fade in)">
-    Dots fade in and scale up from 0 to 1 using `FastOutSlowInEasing` over `enterDurationMs` (default 3 000 ms). A left-to-right reveal gradient (`DstIn` mask) unveils the dots one by one.
+    Dots fade in and scale up from 0 to 1 using `FastOutSlowInEasing` over `enterDurationMs` (default 3 000 ms). A left-to-right `DstIn` gradient mask sweeps across the dots as they appear, revealing them progressively from left to right.
   </Step>
   <Step title="Breathe (cosine pulse)">
-    Scale oscillates via `0.9 - 0.1 × cos(angle)` with a period of 3 000 ms, producing a gentle in-and-out breathing rhythm. Each dot lights up sequentially during this phase.
+    Scale oscillates via `0.9 - 0.1 × cos(angle)` with a period of 3 000 ms, producing a gentle in-and-out breathing rhythm. Each dot's alpha ramps up sequentially across the breathing phase, so the dots brighten one after another.
   </Step>
   <Step title="Pre-exit dip-and-rise">
     Scale traces `0.8 + 0.2 × cos(progress × 2π)` over `preExitDipAndRiseDuration` (default 3 000 ms), creating a final flourish before the dots leave.

@@ -1,5 +1,5 @@
 ---
-title: "LyricsLineItem Composable API Reference"
+title: "LyricsLineItem: Line Wrapper Composable API Reference"
 sidebarTitle: "LyricsLineItem"
 description: "API reference for LyricsLineItem — a wrapper composable that applies focus-based alpha, scale, blur, and blend mode to lyric line content."
 ---
@@ -64,7 +64,7 @@ fun LyricsLineItem(
 </ParamField>
 
 <ParamField query="isInteractive" type="Boolean" default="true">
-  When `true`, the `Box` gains a `clip(ContinuousRoundedRectangle(8.dp))` and a `combinedClickable` modifier that routes taps to `onLineClicked` and long-presses to `onLinePressed`. When `false`, no gesture modifiers are applied — useful for accompaniment sub-lines or decorative elements that should not be individually tappable.
+  When `true`, the `Box` gains a `clip(ContinuousRoundedRectangle(8.dp))` and a `combinedClickable` modifier that routes taps to `onLineClicked` and long-presses to `onLinePressed`. When `false`, no gesture modifiers are applied — useful for decorative elements or embedded sub-lines that should not be individually tappable. Note: `KaraokeLineText` does not set `isInteractive = false` for its internal accompaniment sub-line wrappers; they remain interactive with the default value of `true`.
 </ParamField>
 
 <ParamField query="content" type="@Composable () -> Unit" required>
@@ -114,7 +114,7 @@ fun MyLyricLine(
 ```
 
 ```kotlin Non-Interactive Accompaniment Line
-// Used by KaraokeLineText internally for accompaniment sub-lines
+// Example of a non-interactive sub-line (e.g. a decorative accompaniment element)
 LyricsLineItem(
     isFocused = true,
     isRightAligned = isRightAligned,

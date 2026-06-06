@@ -1,7 +1,7 @@
 ---
-title: "KaraokeLyricsView Composable API Reference"
+title: "KaraokeLyricsView: Karaoke Lyrics Composable API Reference"
 sidebarTitle: "KaraokeLyricsView"
-description: "Full parameter reference for KaraokeLyricsView — the main composable that renders scrolling karaoke and synced lyrics with syllable animations and auto-scroll."
+description: "Full parameter reference for KaraokeLyricsView, the main composable for scrolling karaoke and synced lyrics with syllable animations and auto-scroll."
 ---
 
 `KaraokeLyricsView` is the top-level composable for the Accompanist Lyrics UI library. It renders a scrollable, animated lyrics view that supports both syllable-timed karaoke lines and simpler line-synced lyrics. The component automatically scrolls to the currently active line, applies blur and scale effects to inactive lines, shows breathing-dot animations during instrumental interludes and intros, and handles both LTR and RTL text direction. Pass a `LazyListState` created with `rememberLazyListState()` so you can observe or programmatically control the scroll position from outside the composable.

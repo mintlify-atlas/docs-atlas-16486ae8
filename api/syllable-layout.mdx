@@ -1,7 +1,7 @@
 ---
-title: "SyllableLayout Data Class Reference"
+title: "SyllableLayout Data Class | Accompanist Lyrics UI API"
 sidebarTitle: "SyllableLayout"
-description: "Reference for SyllableLayout — the pre-computed layout data for a single karaoke syllable, including position, animation info, phonetics, and character layouts."
+description: "API reference for SyllableLayout and WordAnimationInfo data classes — all fields, default values, and per-syllable animation metadata for Lyrics UI."
 ---
 
 `SyllableLayout` holds all pre-computed rendering data for a single `KaraokeSyllable`. It is produced by [`measureSyllablesAndDetermineAnimation()`](/api/lyrics-layout-calculator#measure-syllables-and-determine-animation) and consumed by the canvas drawing functions in `KaraokeLineText`. Each instance is `@Stable`, meaning Compose can skip recomposition when its fields have not changed.
